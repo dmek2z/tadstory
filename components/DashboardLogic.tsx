@@ -26,16 +26,20 @@ export default function DashboardLogic({ children }: { children: React.ReactNode
   const { refreshData } = useStorage();
   const router = useRouter();
 
-  // hasPermission 로직 추가
   const hasPermission = (pageId: string, permissionType: "view" | "edit"): boolean => {
+    console.log("DashboardLogic hasPermission called for:", { pageId, permissionType, userRole: user?.role, authIsLoading });
     if (authIsLoading || !user) {
-      return false; // 로딩 중이거나 사용자가 없으면 권한 없음
+      console.log("DashboardLogic hasPermission: auth loading or no user, returning false.");
+      return false; 
     }
     if (user.role === "admin") {
-      return true; // 관리자는 모든 권한 가짐
+      console.log("DashboardLogic hasPermission: user is admin, returning true.");
+      return true; 
     }
     const permission = user.permissions.find((p: Permission) => p.page === pageId);
-    return permission ? permission[permissionType] : false;
+    const result = permission ? permission[permissionType] : false;
+    console.log("DashboardLogic hasPermission: found permission object:", permission, "Result:", result);
+    return result;
   };
 
   const getCurrentPageId = (): string => {
@@ -48,27 +52,37 @@ export default function DashboardLogic({ children }: { children: React.ReactNode
   };
 
   useEffect(() => {
+    console.log("DashboardLogic useEffect (auth check): triggered", { authIsLoading, user, pathname });
     if (authIsLoading) {
+      console.log("DashboardLogic useEffect (auth check): auth is loading, returning.");
       return;
     }
 
+    console.log("DashboardLogic useEffect (auth check): calling getCurrentPageId for pathname:", pathname);
     const pageId = getCurrentPageId();
+    console.log("DashboardLogic useEffect (auth check): pageId determined as:", pageId, "Current user:", user);
     
     if (!user) {
+      console.log("DashboardLogic useEffect (auth check): No user found, redirecting to login with from:", pathname);
       const loginUrl = new URL('/login', window.location.origin);
       loginUrl.searchParams.set('from', pathname);
       router.replace(loginUrl.toString());
       return;
     }
 
-    // "settings" 페이지는 권한 검사를 건너뛰도록 조건 추가
+    console.log("DashboardLogic useEffect (auth check): User found. Checking permissions for pageId:", pageId, "User role:", user.role);
     if (pageId && pageId !== "settings" && !hasPermission(pageId, "view")) {
+      console.log("DashboardLogic useEffect (auth check): No view permission for pageId:", pageId, "Redirecting to /dashboard. User permissions:", user.permissions);
       router.replace("/dashboard");
+    } else {
+      console.log("DashboardLogic useEffect (auth check): Has view permission for pageId:", pageId, "or page is settings/root dashboard.");
     }
-  }, [pathname, user, router, hasPermission, authIsLoading]);
+  }, [pathname, user, router, authIsLoading]);
 
   useEffect(() => {
+    console.log("DashboardLogic useEffect (refreshData): triggered", { authIsLoading, user });
     if (!authIsLoading && user) {
+      console.log("DashboardLogic useEffect (refreshData): User found and auth not loading, calling refreshData().");
       refreshData();
     }
   }, [authIsLoading, user, refreshData]);

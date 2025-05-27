@@ -73,13 +73,28 @@ export default function DashboardLayout({
   const { user, logout, isLoading: authIsLoading } = useAuth()
 
   const hasPermission = (pageId: string, permissionType: "view" | "edit"): boolean => {
-    if (authIsLoading || !user) return false
-    if (user.role === "admin") return true
-    const permission = user.permissions.find((p: Permission) => p.page === pageId)
-    return permission ? permission[permissionType] : false
+    console.log("DashboardLayout hasPermission called for:", { pageId, permissionType, userRole: user?.role, authIsLoading });
+    if (authIsLoading || !user) {
+      console.log("DashboardLayout hasPermission: auth loading or no user, returning false.");
+      return false;
+    }
+    if (user.role === "admin") {
+      console.log("DashboardLayout hasPermission: user is admin, returning true.");
+      return true;
+    }
+    const permission = user.permissions.find((p: Permission) => p.page === pageId);
+    const result = permission ? permission[permissionType] : false;
+    console.log("DashboardLayout hasPermission: found permission object:", permission, "Result:", result);
+    return result;
   }
 
-  const accessibleNavItems = navItems.filter((item) => hasPermission(item.id, "view"))
+  console.log("DashboardLayout: Calculating accessibleNavItems. Current user:", user, "Auth loading:", authIsLoading);
+  const accessibleNavItems = navItems.filter((item) => {
+    const canAccess = hasPermission(item.id, "view");
+    console.log(`DashboardLayout: Checking nav item '${item.id}', canAccess (view):`, canAccess);
+    return canAccess;
+  });
+  console.log("DashboardLayout: Calculated accessibleNavItems:", accessibleNavItems);
 
   return (
     <StorageProvider>
