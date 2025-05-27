@@ -68,6 +68,7 @@ export function useAuth() {
 
 // 인증 프로바이더 컴포넌트
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  console.log("AuthProvider component rendered - Test Log");
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
