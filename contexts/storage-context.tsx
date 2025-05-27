@@ -56,36 +56,49 @@ export interface User {
   permissions: { page: string; view: boolean; edit: boolean }[]
 }
 
+export interface StockMovement {
+  id: string;
+  product_id: string;
+  type: "IN" | "OUT";
+  quantity: number;
+  moved_at: string;
+  rack_id?: string;
+}
+
 interface StorageContextType {
   // Products
   products: Product[]
-  addProduct: (product: Omit<Product, 'id'>) => Promise<Product>
+  addProduct: (product: Omit<Product, 'id'>) => Promise<Product | undefined>
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>
   deleteProduct: (id: string) => Promise<void>
 
   // Racks
   racks: Rack[]
-  addRack: (rack: Omit<Rack, 'id'>) => Promise<Rack>
+  addRack: (rack: Omit<Rack, 'id'>) => Promise<Rack | undefined>
   updateRack: (id: string, updates: Partial<Rack>) => Promise<void>
   deleteRack: (id: string) => Promise<void>
 
   // Product Codes
   productCodes: ProductCode[]
-  addProductCode: (productCode: Omit<ProductCode, 'id'>) => Promise<ProductCode>
+  addProductCode: (productCode: Omit<ProductCode, 'id'>) => Promise<ProductCode | undefined>
   updateProductCode: (id: string, updates: Partial<ProductCode>) => Promise<void>
   deleteProductCode: (id: string) => Promise<void>
 
   // Categories
   categories: Category[]
-  addCategory: (category: Omit<Category, 'id'>) => Promise<Category>
+  addCategory: (category: Omit<Category, 'id'>) => Promise<Category | undefined>
   updateCategory: (id: string, updates: Partial<Category>) => Promise<void>
   deleteCategory: (id: string) => Promise<void>
 
   // Users
   users: User[]
-  addUser: (user: Omit<User, 'id'>) => Promise<User>
+  addUser: (user: Omit<User, 'id'>) => Promise<User | undefined>
   updateUser: (id: string, updates: Partial<User>) => Promise<void>
   deleteUser: (id: string) => Promise<void>
+
+  // New additions for stock movements and last updated
+  stockMovements: StockMovement[]
+  lastUpdated: number
 
   isLoading: boolean
   refreshData: () => Promise<void>
@@ -103,25 +116,28 @@ export function StorageProvider({ children }: StorageProviderProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [productCodes, setProductCodes] = useState<ProductCode[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<number>(Date.now());
 
   const refreshData = async () => {
     try {
       setIsLoading(true);
-      const [productsData, racksData, categoriesData, usersData, productCodesData] = await Promise.all([
+      const [productsData, racksData, categoriesData, usersData, productCodesData, stockMovementsData] = await Promise.all([
         fetchProducts(),
         fetchRacks(),
         fetchCategories(),
         fetchUsers(),
-        fetchProductCodes()
+        fetchProductCodes(),
+        Promise.resolve([])
       ]);
 
-      setProducts(productsData);
-      setRacks(racksData);
-      setCategories(categoriesData);
-      setUsers(usersData);
-      setProductCodes(productCodesData);
+      setProducts(productsData || []);
+      setRacks(racksData || []);
+      setCategories(categoriesData || []);
+      setUsers(usersData || []);
+      setProductCodes(productCodesData || []);
+      setStockMovements(stockMovementsData || []);
       setLastRefresh(Date.now());
     } catch (error) {
       console.error('Error refreshing data:', error);
@@ -398,6 +414,10 @@ export function StorageProvider({ children }: StorageProviderProps) {
       addUser: addUserToStorage,
       updateUser: updateUserInStorage,
       deleteUser: deleteUserFromStorage,
+
+      // New additions for stock movements and last updated
+      stockMovements,
+      lastUpdated: lastRefresh,
 
       isLoading,
       refreshData
