@@ -32,7 +32,8 @@ export default function DashboardLogic({ children }: { children: React.ReactNode
       console.log("DashboardLogic hasPermission: auth loading or no user, returning false.");
       return false; 
     }
-    if (user.role === "admin") {
+    // Ensure role comparison is exact
+    if (user.role && user.role.trim() === "admin") {
       console.log("DashboardLogic hasPermission: user is admin, returning true.");
       return true; 
     }
@@ -53,31 +54,43 @@ export default function DashboardLogic({ children }: { children: React.ReactNode
 
   useEffect(() => {
     console.log("DashboardLogic useEffect (auth check): triggered", { authIsLoading, user, pathname });
+
     if (authIsLoading) {
       console.log("DashboardLogic useEffect (auth check): auth is loading, returning.");
       return;
     }
 
+    // Check if user is undefined (context might still be initializing)
+    if (user === undefined) {
+        console.log("DashboardLogic useEffect (auth check): user is undefined (context initializing?), returning.");
+        return;
+    }
+
     console.log("DashboardLogic useEffect (auth check): calling getCurrentPageId for pathname:", pathname);
     const pageId = getCurrentPageId();
-    console.log("DashboardLogic useEffect (auth check): pageId determined as:", pageId, "Current user:", user);
+    console.log("DashboardLogic useEffect (auth check): pageId determined as:", pageId, "Current user object:", JSON.stringify(user)); // Log entire user object
     
-    if (!user) {
-      console.log("DashboardLogic useEffect (auth check): No user found, redirecting to login with from:", pathname);
+    if (!user) { 
+      console.error("DashboardLogic useEffect (auth check): CRITICAL - No user found AFTER authIsLoading is false. Redirecting to login. Pathname:", pathname);
       const loginUrl = new URL('/login', window.location.origin);
-      loginUrl.searchParams.set('from', pathname);
+      // Prevent adding 'from' query param if already on login page or for _next internal routes
+      if (pathname !== "/login" && !pathname.startsWith("/_next/")) {
+          loginUrl.searchParams.set('from', pathname);
+      }
       router.replace(loginUrl.toString());
       return;
     }
 
-    console.log("DashboardLogic useEffect (auth check): User found. Checking permissions for pageId:", pageId, "User role:", user.role);
+    // User is present, and auth is not loading
+    console.log("DashboardLogic useEffect (auth check): User found. User role:", user.role, "Checking permissions for pageId:", pageId);
     if (pageId && pageId !== "settings" && !hasPermission(pageId, "view")) {
-      console.log("DashboardLogic useEffect (auth check): No view permission for pageId:", pageId, "Redirecting to /dashboard. User permissions:", user.permissions);
-      router.replace("/dashboard");
+      console.error("DashboardLogic useEffect (auth check): CRITICAL - No view permission for pageId:", pageId, "Redirecting to /dashboard. User:", JSON.stringify(user));
+      router.replace("/dashboard"); 
     } else {
       console.log("DashboardLogic useEffect (auth check): Has view permission for pageId:", pageId, "or page is settings/root dashboard.");
     }
-  }, [pathname, user, router, authIsLoading]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, user, authIsLoading, router]); // Removed hasPermission, as it's stable if not rememoized
 
   useEffect(() => {
     console.log("DashboardLogic useEffect (refreshData): triggered", { authIsLoading, user });
