@@ -228,6 +228,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null); 
           localStorage.removeItem('user');
           eraseCookie('currentUser'); // Clear cookie
+          setIsLoading(false); // Set loading to false on failure
           throw new Error("User profile not found in our records after login.");
         }
       } else {
@@ -235,6 +236,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         localStorage.removeItem('user');
         eraseCookie('currentUser'); // Clear cookie
+        setIsLoading(false); // Set loading to false on failure
         throw new Error("Login failed: No user session created.");
       }
     } catch (error) {
@@ -247,14 +249,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Re-throw the error so the calling component can handle it (e.g., show a message)
       throw error;
     } finally {
-      // For login, isLoading is typically set to false by the calling component or after navigation
-      // However, if an error occurs before navigation, ensure it's false.
-      // If navigation happens, the component might unmount, making this less critical here.
-      // Let's ensure it is set to false if not already handled by re-throwing the error.
-      if (isLoading) { // isLoading might have been set to false by error handling already
-          setIsLoading(false);
-      }
-      console.log("login: finished. Current user state:", user, "isLoading:", isLoading);
+      // REMOVED setIsLoading(false) from here.
+      // The main path will keep isLoading true, letting the redirect and subsequent
+      // initializeAuth on the new page set it to false when user state is confirmed.
+      // Error paths above explicitly set it to false.
+      console.log("login: finished. isLoading is now:", isLoading, "User state (closure):", user);
     }
   };
 
