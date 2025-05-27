@@ -179,9 +179,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    console.log("login: function called with email:", email);
+    console.log("login: function called with email:", email, "Current isLoading:", isLoading);
+    setIsLoading(true); // Ensure isLoading is true at the beginning
+    console.log("login: setIsLoading(true) called. Current isLoading:", isLoading); // This might show the stale value
+
     try {
-      setIsLoading(true);
       const { data: { session }, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -190,7 +192,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (signInError) {
         console.error("login: Error signing in:", signInError);
-        eraseCookie('currentUser'); // Clear cookie on login failure
+        eraseCookie('currentUser');
+        setIsLoading(false); // Set loading to false on sign-in error
         throw signInError;
       }
 
@@ -205,7 +208,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (userFetchError) {
           console.error("login: Error fetching user data from 'users' table after sign-in:", userFetchError);
-          eraseCookie('currentUser'); // Clear cookie
+          eraseCookie('currentUser');
+          setIsLoading(false); // Set loading to false on user fetch error
           throw userFetchError;
         }
 
@@ -220,40 +224,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           };
           setUser(userToSet);
           localStorage.setItem('user', JSON.stringify(userToSet));
-          setCookie('currentUser', userToSet.id, 1); // Set cookie with user ID
-          console.log("login: User state, localStorage, and cookie set. Navigating to /dashboard.", userToSet);
+          setCookie('currentUser', userToSet.id, 1); 
+          console.log("login: User state, localStorage, and cookie set.", userToSet, "Current isLoading before push:", isLoading);
+          
+          // Short delay to ensure cookie is processed by the browser before navigation
+          // This is a workaround; ideally, middleware should handle this gracefully.
+          // await new Promise(resolve => setTimeout(resolve, 100)); 
+          // The above delay might not be necessary if isLoading is handled correctly.
+
+          console.log("login: Navigating to /dashboard. isLoading should remain true.");
           router.push('/dashboard');
+          // DO NOT set isLoading to false here. Let initializeAuth on the new page handle it.
         } else {
           console.warn("login: No user data found in 'users' table for ID after sign-in:", session.user.id);
           setUser(null); 
           localStorage.removeItem('user');
-          eraseCookie('currentUser'); // Clear cookie
-          setIsLoading(false); // Set loading to false on failure
+          eraseCookie('currentUser');
+          setIsLoading(false); 
           throw new Error("User profile not found in our records after login.");
         }
       } else {
         console.error("login: No session or user found after successful sign-in call without error. This is unexpected.");
         setUser(null);
         localStorage.removeItem('user');
-        eraseCookie('currentUser'); // Clear cookie
-        setIsLoading(false); // Set loading to false on failure
+        eraseCookie('currentUser');
+        setIsLoading(false); 
         throw new Error("Login failed: No user session created.");
       }
     } catch (error) {
       console.error('Login error (overall catch):', error);
-      // Ensure user state is cleared on any login error
       setUser(null);
       localStorage.removeItem('user');
-      eraseCookie('currentUser'); // Clear cookie
-      setIsLoading(false); // Ensure loading is stopped
-      // Re-throw the error so the calling component can handle it (e.g., show a message)
+      eraseCookie('currentUser');
+      setIsLoading(false); 
       throw error;
     } finally {
-      // REMOVED setIsLoading(false) from here.
-      // The main path will keep isLoading true, letting the redirect and subsequent
-      // initializeAuth on the new page set it to false when user state is confirmed.
-      // Error paths above explicitly set it to false.
-      console.log("login: finished. isLoading is now:", isLoading, "User state (closure):", user);
+      // isLoading should NOT be set to false here in the success path.
+      // It's set to false in error paths within the try-catch block.
+      // For the success path, initializeAuth on the destination page will set it.
+      console.log("login: finally block. Current isLoading:", isLoading, "User state (closure):", user);
     }
   };
 
