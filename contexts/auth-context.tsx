@@ -66,6 +66,42 @@ export function useAuth() {
   return context;
 }
 
+// Helper function to set a cookie (can be moved to a utils file)
+const setCookie = (name: string, value: string, days: number) => {
+  let expires = "";
+  if (days) {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    expires = "; expires=" + date.toUTCString();
+  }
+  if (typeof document !== 'undefined') { // Ensure document is defined (client-side)
+    document.cookie = name + "=" + (value || "")  + expires + "; path=/";
+    console.log(`Cookie set: ${name}=${value}`);
+  }
+};
+
+// Helper function to get a cookie (not strictly needed for middleware, but good for consistency)
+const getCookie = (name: string): string | null => {
+  if (typeof document !== 'undefined') {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for(let i=0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) === ' ') c = c.substring(1,c.length);
+        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length,c.length);
+    }
+  }
+  return null;
+};
+
+// Helper function to erase a cookie
+const eraseCookie = (name: string) => {   
+  if (typeof document !== 'undefined') {
+    document.cookie = name+'=; Max-Age=-99999999; path=/';  
+    console.log(`Cookie erased: ${name}`);
+  }
+};
+
 // 인증 프로바이더 컴포넌트
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   console.log("AuthProvider component rendered - Test Log");
@@ -76,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     console.log("AuthProvider: useEffect triggered, calling initializeAuth");
     initializeAuth();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const initializeAuth = async () => {
@@ -86,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (sessionError) {
         console.error("initializeAuth: Error getting session:", sessionError);
+        eraseCookie('currentUser'); // Clear cookie on error
         throw sessionError;
       }
       
@@ -100,8 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (userFetchError) {
           console.error("initializeAuth: Error fetching user data from 'users' table:", userFetchError);
-          //setUser(null); // Optionally clear user if fetch fails
-          //localStorage.removeItem('user');
+          eraseCookie('currentUser'); // Clear cookie
           throw userFetchError;
         }
 
@@ -116,21 +153,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           };
           setUser(userToSet);
           localStorage.setItem('user', JSON.stringify(userToSet));
-          console.log("initializeAuth: User state set and saved to localStorage:", userToSet);
+          setCookie('currentUser', userToSet.id, 1); // Set cookie with user ID, expires in 1 day
+          console.log("initializeAuth: User state, localStorage, and cookie set:", userToSet);
         } else {
           console.warn("initializeAuth: No user data found in 'users' table for ID:", session.user.id);
-          setUser(null); // 명시적으로 사용자 정보 없음을 설정
+          setUser(null); 
           localStorage.removeItem('user');
+          eraseCookie('currentUser'); // Clear cookie
         }
       } else {
         console.log("initializeAuth: No active session found.");
         setUser(null);
         localStorage.removeItem('user');
+        eraseCookie('currentUser'); // Clear cookie
       }
     } catch (error) {
       console.error('Auth initialization error (overall catch):', error);
       setUser(null);
       localStorage.removeItem('user');
+      eraseCookie('currentUser'); // Clear cookie
     } finally {
       setIsLoading(false);
       console.log("initializeAuth: finished, isLoading set to false. Current user state:", user);
@@ -149,6 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (signInError) {
         console.error("login: Error signing in:", signInError);
+        eraseCookie('currentUser'); // Clear cookie on login failure
         throw signInError;
       }
 
@@ -163,8 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (userFetchError) {
           console.error("login: Error fetching user data from 'users' table after sign-in:", userFetchError);
-          //setUser(null); // Optionally clear user
-          //localStorage.removeItem('user');
+          eraseCookie('currentUser'); // Clear cookie
           throw userFetchError;
         }
 
@@ -179,45 +220,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           };
           setUser(userToSet);
           localStorage.setItem('user', JSON.stringify(userToSet));
-          console.log("login: User state set and saved to localStorage. Navigating to /dashboard.", userToSet);
+          setCookie('currentUser', userToSet.id, 1); // Set cookie with user ID
+          console.log("login: User state, localStorage, and cookie set. Navigating to /dashboard.", userToSet);
           router.push('/dashboard');
         } else {
           console.warn("login: No user data found in 'users' table for ID after sign-in:", session.user.id);
-          // It's crucial to handle this case. Maybe the user exists in auth.users but not public.users
-          // For now, we won't set the user, which might prevent login.
           setUser(null); 
           localStorage.removeItem('user');
-          // Consider throwing an error or showing a message to the user.
+          eraseCookie('currentUser'); // Clear cookie
           throw new Error("User profile not found in our records after login.");
         }
       } else {
-        // This case should ideally not be reached if signInError is not thrown,
-        // but as a safeguard:
         console.error("login: No session or user found after successful sign-in call without error. This is unexpected.");
         setUser(null);
         localStorage.removeItem('user');
+        eraseCookie('currentUser'); // Clear cookie
         throw new Error("Login failed: No user session created.");
       }
     } catch (error) {
       console.error('Login error (overall catch):', error);
-      setIsLoading(false); // Ensure isLoading is reset on error
+      // Ensure user state is cleared on any login error
       setUser(null);
       localStorage.removeItem('user');
-      throw error; // Re-throw to be caught by UI
+      eraseCookie('currentUser'); // Clear cookie
+      setIsLoading(false); // Ensure loading is stopped
+      // Re-throw the error so the calling component can handle it (e.g., show a message)
+      throw error;
     } finally {
-      // setIsLoading(false) should be here if login doesn't always navigate or throw
-      // If login always navigates or throws, isLoading might be reset by initializeAuth on page load
-      // For safety, ensure isLoading is managed if the login flow can complete without navigation or error here.
-      // However, successful login *should* navigate.
-      // If we reach here after a successful login that *should* have navigated,
-      // isLoading might still be true, which could be an issue.
-      // Let's ensure isLoading is false if an error didn't occur that re-threw.
-      // The main place isLoading is set to false is in initializeAuth.
-      // If login is successful, initializeAuth will run on the new page.
-      // If login fails and throws, it's handled.
-      // The tricky case is if login *succeeds* but doesn't navigate, and no error is thrown *here*.
-      // The current code *does* navigate on success.
-       console.log("login: finished. Current user state:", user, "isLoading:", isLoading);
+      // For login, isLoading is typically set to false by the calling component or after navigation
+      // However, if an error occurs before navigation, ensure it's false.
+      // If navigation happens, the component might unmount, making this less critical here.
+      // Let's ensure it is set to false if not already handled by re-throwing the error.
+      if (isLoading) { // isLoading might have been set to false by error handling already
+          setIsLoading(false);
+      }
+      console.log("login: finished. Current user state:", user, "isLoading:", isLoading);
     }
   };
 
@@ -226,24 +263,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true);
       const { error } = await supabase.auth.signOut();
-      console.log("logout: signOut response", { error });
       if (error) {
         console.error("logout: Error signing out:", error);
-        throw error;
+        // Even if sign-out fails, attempt to clear local state and cookie
       }
-      
       setUser(null);
       localStorage.removeItem('user');
-      console.log("logout: User state cleared, navigating to /");
-      router.push('/');
+      eraseCookie('currentUser'); // Erase the cookie on logout
+      console.log("logout: User state, localStorage, and cookie cleared. Navigating to /login.");
+      router.push('/login');
     } catch (error) {
       console.error('Logout error (overall catch):', error);
-      // We still want to clear user state on logout error if possible
+      // Ensure local state and cookie are cleared even on error
       setUser(null);
       localStorage.removeItem('user');
+      eraseCookie('currentUser');
     } finally {
       setIsLoading(false);
-      console.log("logout: finished, isLoading set to false. Current user state:", user);
+      console.log("logout: finished. Current user state:", user);
     }
   };
 
