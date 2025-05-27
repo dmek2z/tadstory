@@ -1,5 +1,7 @@
 "use client"
 
+console.log("--- DashboardPage: Script loaded (top level) ---");
+
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from "react"
@@ -11,11 +13,17 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "@/com
 import { useStorage } from "@/contexts/storage-context"
 import { Skeleton } from "@/components/ui/skeleton"
 import { supabase } from '@/lib/supabaseClient'
+import { useAuth } from "@/contexts/auth-context"
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82ca9d"]
 const ChartPieClient = nextDynamic(() => import("@/components/ChartPieClient"), { ssr: false })
 
 export default function DashboardPage() {
+  console.log("--- DashboardPage: Component rendering ---");
+  const { user, isLoading: authIsLoading } = useAuth();
+
+  console.log("--- DashboardPage: Auth state ---", { user, authIsLoading });
+
   const { products, racks, categories, users, isLoading, productCodes } = useStorage()
   const [storageDistributionData, setStorageDistributionData] = useState<any[]>([])
   const [recentActivity, setRecentActivity] = useState<any[]>([])
@@ -180,6 +188,26 @@ export default function DashboardPage() {
 
     setRecentActivity(activities)
   }, [racks, products, categories, isLoading, productCodes])
+
+  if (authIsLoading) {
+    console.log("--- DashboardPage: Auth is loading, rendering loading state ---");
+    return (
+      <div>
+        <h2>Dashboard Page - Auth Loading...</h2>
+      </div>
+    );
+  }
+
+  if (!user) {
+    console.log("--- DashboardPage: No user, rendering login prompt (should be handled by layout ideally) ---");
+    return (
+      <div>
+        <h2>Dashboard Page - Please log in</h2>
+      </div>
+    );
+  }
+
+  console.log("--- DashboardPage: Rendering main content for user:", user.email);
 
   if (isLoading) {
     return <DashboardSkeleton />

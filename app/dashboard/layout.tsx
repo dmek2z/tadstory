@@ -1,207 +1,118 @@
 "use client"
 
+console.log("--- DashboardLayout: Script loaded (top level) ---");
+
 import type React from "react"
+// import { useState } from "react" // Temporarily unused
+// import Link from "next/link" // Temporarily unused
+// import { usePathname } from "next/navigation" // Temporarily unused
+// import { Grid3x3, History, Home, LogOut, Package, Settings, Users } from "lucide-react" // Temporarily unused
+// import Image from "next/image" // Temporarily unused
 
-import { useState } from "react"
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { Grid3x3, History, Home, LogOut, Package, Settings, Users } from "lucide-react"
-import Image from "next/image"
-
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
-import { StorageProvider } from "@/contexts/storage-context"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+// import { cn } from "@/lib/utils" // Temporarily unused
+// import { Button } from "@/components/ui/button" // Temporarily unused
+// import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet" // Temporarily unused
+// import { StorageProvider } from "@/contexts/storage-context" // Temporarily REMOVED
+// import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu" // Temporarily unused
 import { useAuth } from "@/contexts/auth-context"
-import DashboardLogic from "@/components/DashboardLogic"
-import type { Permission } from "@/contexts/auth-context"
+// import DashboardLogic from "@/components/DashboardLogic" // Temporarily REMOVED
+// import type { Permission } from "@/contexts/auth-context" // Temporarily unused
 
-interface NavItem {
-  title: string
-  href: string
-  icon: React.ElementType
-  id: string
-}
+// interface NavItem { // Temporarily unused
+//   title: string
+//   href: string
+//   icon: React.ElementType
+//   id: string
+// }
 
-const navItems: NavItem[] = [
-  {
-    title: "대시보드",
-    href: "/dashboard",
-    icon: Home,
-    id: "dashboard",
-  },
-  {
-    title: "랙 보기",
-    href: "/dashboard/racks",
-    icon: Grid3x3,
-    id: "racks",
-  },
-  {
-    title: "품목 코드",
-    href: "/dashboard/products",
-    icon: Package,
-    id: "products",
-  },
-  {
-    title: "히스토리",
-    href: "/dashboard/history",
-    icon: History,
-    id: "history",
-  },
-  {
-    title: "사용자 관리",
-    href: "/dashboard/users",
-    icon: Users,
-    id: "users",
-  },
-  {
-    title: "설정",
-    href: "/dashboard/settings",
-    icon: Settings,
-    id: "settings",
-  },
-]
+// const navItems: NavItem[] = [ // Temporarily unused
+//   {
+//     title: "대시보드",
+//     href: "/dashboard",
+//     icon: Home,
+//     id: "dashboard",
+//   },
+//   // ... other nav items
+// ]
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const pathname = usePathname()
-  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
+  console.log("--- DashboardLayout: Component rendering ---");
+  // const pathname = usePathname() // Temporarily unused
+  // const [isMobileNavOpen, setIsMobileNavOpen] = useState(false) // Temporarily unused
   const { user, logout, isLoading: authIsLoading } = useAuth()
 
-  const hasPermission = (pageId: string, permissionType: "view" | "edit"): boolean => {
-    console.log("DashboardLayout hasPermission called for:", { pageId, permissionType, userRole: user?.role, authIsLoading });
-    if (authIsLoading || !user) {
-      console.log("DashboardLayout hasPermission: auth loading or no user, returning false.");
-      return false;
-    }
-    if (user.role === "admin") {
-      console.log("DashboardLayout hasPermission: user is admin, returning true.");
-      return true;
-    }
-    const permission = user.permissions.find((p: Permission) => p.page === pageId);
-    const result = permission ? permission[permissionType] : false;
-    console.log("DashboardLayout hasPermission: found permission object:", permission, "Result:", result);
-    return result;
+  console.log("--- DashboardLayout: Auth state ---", { user, authIsLoading });
+
+  // const hasPermission = (pageId: string, permissionType: "view" | "edit"): boolean => { // Temporarily unused
+  //   console.log("DashboardLayout hasPermission called for:", { pageId, permissionType, userRole: user?.role, authIsLoading });
+  //   if (authIsLoading || !user) {
+  //     console.log("DashboardLayout hasPermission: auth loading or no user, returning false.");
+  //     return false;
+  //   }
+  //   if (user.role === "admin") {
+  //     console.log("DashboardLayout hasPermission: user is admin, returning true.");
+  //     return true;
+  //   }
+  //   const permission = user.permissions.find((p: Permission) => p.page === pageId);
+  //   const result = permission ? permission[permissionType] : false;
+  //   console.log("DashboardLayout hasPermission: found permission object:", permission, "Result:", result);
+  //   return result;
+  // }
+
+  // console.log("DashboardLayout: Calculating accessibleNavItems. Current user:", user, "Auth loading:", authIsLoading);
+  // const accessibleNavItems = navItems.filter((item) => { // Temporarily unused
+  //   const canAccess = hasPermission(item.id, "view");
+  //   console.log(`DashboardLayout: Checking nav item '${item.id}', canAccess (view):`, canAccess);
+  //   return canAccess;
+  // });
+  // console.log("DashboardLayout: Calculated accessibleNavItems:", accessibleNavItems);
+
+  if (authIsLoading) {
+    console.log("--- DashboardLayout: Auth is loading, rendering loading state ---");
+    return (
+      <div>
+        <h1>Auth Loading...</h1>
+        <p>Please wait.</p>
+      </div>
+    );
   }
 
-  console.log("DashboardLayout: Calculating accessibleNavItems. Current user:", user, "Auth loading:", authIsLoading);
-  const accessibleNavItems = navItems.filter((item) => {
-    const canAccess = hasPermission(item.id, "view");
-    console.log(`DashboardLayout: Checking nav item '${item.id}', canAccess (view):`, canAccess);
-    return canAccess;
-  });
-  console.log("DashboardLayout: Calculated accessibleNavItems:", accessibleNavItems);
-
+  // Simplified structure, removing StorageProvider and DashboardLogic temporarily
   return (
-    <StorageProvider>
-      <DashboardLogic>
-        <div className="flex min-h-screen flex-col">
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6">
-            <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" size="icon" className="md:hidden" aria-label="메뉴 열기">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-5 w-5"
-                  >
-                    <line x1="4" x2="20" y1="12" y2="12" />
-                    <line x1="4" x2="20" y1="6" y2="6" />
-                    <line x1="4" x2="20" y1="18" y2="18" />
-                  </svg>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-72">
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-center gap-2 border-b pb-4">
-                    <Image
-                      src="/images/tad-story-logo.png"
-                      alt="TAD STORY"
-                      width={150}
-                      height={40}
-                      className="object-contain"
-                    />
-                  </div>
-                  <nav className="grid gap-2">
-                    {accessibleNavItems.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setIsMobileNavOpen(false)}
-                        className={cn(
-                          "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground",
-                          pathname === item.href ? "bg-accent text-accent-foreground" : "text-muted-foreground",
-                        )}
-                      >
-                        <item.icon className="h-5 w-5" />
-                        {item.title}
-                      </Link>
-                    ))}
-                  </nav>
-                </div>
-              </SheetContent>
-            </Sheet>
-            <div className="flex items-center gap-2">
-              <Image
-                src="/images/tad-story-logo.png"
-                alt="TAD STORY"
-                width={150}
-                height={40}
-                className="object-contain"
-              />
-            </div>
-            <div className="flex-1" />
-            <div className="flex items-center gap-4">
-              <DropdownMenu>
-                <div className="font-medium">{user?.name || "관리자"}</div>
-                <DropdownMenuContent align="end">
-                  {hasPermission("settings", "view") && (
-                    <DropdownMenuItem asChild>
-                      <Link href="/dashboard/settings">설정</Link>
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={logout}>로그아웃</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <Button variant="ghost" size="icon" onClick={logout}>
-                <LogOut className="h-5 w-5" />
-                <span className="sr-only">로그아웃</span>
-              </Button>
-            </div>
-          </header>
-          <div className="flex flex-1">
-            <aside className="hidden w-64 border-r bg-muted/40 md:block">
-              <nav className="grid gap-2 p-4">
-                {accessibleNavItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground",
-                      pathname === item.href ? "bg-accent text-accent-foreground" : "text-muted-foreground",
-                    )}
-                  >
-                    <item.icon className="h-5 w-5" />
-                    {item.title}
-                  </Link>
-                ))}
-              </nav>
-            </aside>
-            <main className="flex-1 p-4 md:p-6">{children}</main>
-          </div>
+    // <StorageProvider> // Temporarily REMOVED
+    //   <DashboardLogic> // Temporarily REMOVED
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6">
+        {/* Simplified Header */}
+        <div>TAD STORY - Simplified Layout</div>
+        <div style={{ marginLeft: 'auto' }}>
+          {user ? (
+            <>
+              <span>User: {user.email} (Role: {user.role})</span>
+              <button onClick={logout} style={{ marginLeft: '10px' }}>Logout</button>
+            </>
+          ) : (
+            <span>User not logged in.</span>
+          )}
         </div>
-      </DashboardLogic>
-    </StorageProvider>
+      </header>
+      <div className="flex flex-1">
+        {/* Simplified Sidebar (optional, can be removed too) */}
+        <aside className="hidden w-64 border-r bg-muted/40 md:block">
+          <nav className="grid gap-2 p-4">
+            <p>Simplified Nav</p>
+          </nav>
+        </aside>
+        <main className="flex-1 p-4 md:p-6">
+          {user ? children : <h1>Please log in to see dashboard content.</h1>}
+        </main>
+      </div>
+      {/* </DashboardLogic> // Temporarily REMOVED */}
+    {/* </StorageProvider> // Temporarily REMOVED */}
+    </div>
   )
 }
