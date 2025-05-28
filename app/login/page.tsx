@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import type React from "react" // React 타입 명시적으로 임포트
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
@@ -19,60 +19,67 @@ export default function LoginPage() {
   const [userId, setUserId] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false) // 페이지 자체의 로딩 상태 (버튼 등)
   const [saveId, setSaveId] = useState(false)
   const [autoLogin, setAutoLogin] = useState(false)
-  const { login, currentUser, isLoading: authLoading } = useAuth()
+  const { login, currentUser, isLoading: authLoading } = useAuth() // authLoading은 AuthProvider의 로딩 상태
 
-  // 이미 로그인된 경우 대시보드로 리다이렉트
+  // 1. 이미 로그인된 경우 또는 currentUser 상태 변경 시 대시보드로 리다이렉트
   useEffect(() => {
     if (currentUser && !authLoading) {
       router.push("/dashboard")
     }
   }, [currentUser, router, authLoading])
 
-  // Load saved userId and autoLogin state on component mount
+  // 2. 컴포넌트 마운트 시 저장된 아이디 및 자동 로그인 상태 로드
   useEffect(() => {
     const savedUserId = localStorage.getItem("savedUserId")
-    const savedAutoLogin = localStorage.getItem("autoLogin") === "true"
+    const attemptAutoLogin = localStorage.getItem("autoLogin") === "true"
 
     if (savedUserId) {
       setUserId(savedUserId)
       setSaveId(true)
     }
 
-    if (savedAutoLogin) {
+    if (attemptAutoLogin) {
       setAutoLogin(true)
-      // Auto login if enabled
-      handleAutoLogin()
+      // 자동 로그인 시도 (비밀번호는 localStorage에서 직접 가져와 사용)
+      // 이 useEffect는 의존성 배열이 비어있으므로 마운트 시 한 번만 실행됩니다.
+      // currentUser가 아직 없을 때 자동 로그인을 시도합니다.
+      if (!currentUser) { // 이미 로그인 세션이 있을 수 있으므로 확인
+        handleAutoLoginAttempt(savedUserId) // 저장된 ID로 자동 로그인 시도
+      }
     }
-  }, [])
+  }, []) // 빈 의존성 배열로 마운트 시 한 번만 실행
 
-  const handleAutoLogin = () => {
-    // Check if we have auto login enabled and credentials
-    const savedAutoLogin = localStorage.getItem("autoLogin") === "true"
-    const savedUserId = localStorage.getItem("savedUserId")
-    const savedPassword = localStorage.getItem("savedPassword")
+  // 3. 자동 로그인 시도 함수 (비밀번호는 localStorage에서 가져옴)
+  const handleAutoLoginAttempt = async (savedId: string | null) => {
+    const savedPassword = localStorage.getItem("savedPassword") // 보안상 위험!
 
-    if (savedAutoLogin && savedUserId && savedPassword) {
-      setIsLoading(true)
-      // 실제 로그인 시도
-      const success = login(savedUserId, savedPassword)
-
-      if (success) {
-        router.push("/dashboard")
-      } else {
-        setIsLoading(false)
-        // 자동 로그인 실패 시 저장된 비밀번호 제거
-        localStorage.removeItem("savedPassword")
+    if (savedId && savedPassword) {
+      setIsLoading(true) // UI 로딩 상태 활성화
+      try {
+        const success = await login(savedId, savedPassword)
+        if (!success) {
+          // 자동 로그인 실패 (잘못된 자격 증명 등) - 사용자에게 알리지 않을 수 있음
+          localStorage.removeItem("savedPassword") // 실패 시 저장된 비밀번호 제거
+          setIsLoading(false)
+        }
+        // 성공 시: AuthProvider가 currentUser를 업데이트하고,
+        // 위의 useEffect가 감지하여 /dashboard로 리다이렉션합니다.
+        // 여기서 setIsLoading(false)를 명시적으로 호출할 필요는 없을 수 있습니다 (페이지 이동).
+      } catch (error) {
+        console.error("Auto login failed:", error)
+        localStorage.removeItem("savedPassword") // 에러 발생 시에도 제거
+        setIsLoading(false) // UI 로딩 상태 비활성화
       }
     }
   }
 
-  const handleLogin = (e: React.FormEvent) => {
+  // 4. 일반 로그인 처리 함수
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (userId !== "admin" && !emailRegex.test(userId)) {
       alert("유효한 이메일 주소를 입력해주세요.")
@@ -81,48 +88,53 @@ export default function LoginPage() {
 
     setIsLoading(true)
 
-    // Save userId if saveId is checked
     if (saveId) {
       localStorage.setItem("savedUserId", userId)
     } else {
       localStorage.removeItem("savedUserId")
     }
 
-    // Save autoLogin preference
     if (autoLogin) {
       localStorage.setItem("autoLogin", "true")
-      // 자동 로그인을 위해 비밀번호 저장 (실제 환경에서는 보안상 권장되지 않음)
-      localStorage.setItem("savedPassword", password)
+      localStorage.setItem("savedPassword", password) // 실제 환경에서는 보안상 매우 권장되지 않음!
     } else {
       localStorage.removeItem("autoLogin")
       localStorage.removeItem("savedPassword")
     }
 
-    // 로그인 시도
-    const success = login(userId, password)
+    try {
+      const success = await login(userId, password) // 비동기 login 함수 호출
 
-    if (success) {
-      // 로그인 성공
-      router.push("/dashboard")
-    } else {
-      // 로그인 실패
-      alert("아이디 또는 비밀번호가 올바르지 않습니다.")
+      if (success) {
+        // 로그인 성공: AuthProvider가 currentUser를 업데이트하고,
+        // 위의 useEffect가 감지하여 /dashboard로 리다이렉션합니다.
+        // 여기서 setIsLoading(false)를 호출할 필요는 없습니다 (페이지 이동).
+      } else {
+        // 로그인 실패 (잘못된 자격 증명 등, useAuth의 login 함수가 false 반환 시)
+        alert("아이디 또는 비밀번호가 올바르지 않습니다.")
+        setIsLoading(false)
+      }
+    } catch (error: any) {
+      // 로그인 중 시스템/네트워크 오류 발생 (useAuth의 login 함수가 에러 throw 시)
+      console.error("Login failed:", error)
+      alert(error.message || "로그인 중 오류가 발생했습니다.")
       setIsLoading(false)
     }
   }
 
-  // 인증 로딩 중이면 로딩 UI 표시
-  if (authLoading) {
+  // 5. AuthProvider가 초기 인증 상태를 로드 중일 때 로딩 UI 표시
+  if (authLoading && !currentUser) { // currentUser가 없으면서 authLoading 중일 때만 전체 페이지 로더
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-2">
           <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-gray-900"></div>
-          <p className="text-sm text-gray-500">로딩 중...</p>
+          <p className="text-sm text-gray-500">세션 확인 중...</p>
         </div>
       </div>
     )
   }
 
+  // 6. 로그인 폼 UI
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50">
       <Card className="w-full max-w-md shadow-lg">
@@ -150,6 +162,7 @@ export default function LoginPage() {
                 value={userId}
                 onChange={(e) => setUserId(e.target.value)}
                 required
+                disabled={isLoading} // 로딩 중 입력 방지
               />
             </div>
             <div className="space-y-2">
@@ -162,6 +175,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  disabled={isLoading} // 로딩 중 입력 방지
                 />
                 <Button
                   type="button"
@@ -169,6 +183,7 @@ export default function LoginPage() {
                   size="icon"
                   className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                   onClick={() => setShowPassword(!showPassword)}
+                  disabled={isLoading} // 로딩 중 버튼 비활성화
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4 text-slate-400" />
@@ -181,53 +196,34 @@ export default function LoginPage() {
             </div>
             <div className="flex items-center space-x-6">
               <div className="flex items-center space-x-2">
-                <Checkbox id="saveId" checked={saveId} onCheckedChange={(checked) => setSaveId(checked === true)} />
-                <Label htmlFor="saveId" className="text-sm">
-                  아이디 저장
-                </Label>
+                <Checkbox
+                  id="saveId"
+                  checked={saveId}
+                  onCheckedChange={(checked) => setSaveId(checked === true)}
+                  disabled={isLoading}
+                />
+                <Label htmlFor="saveId" className="text-sm">아이디 저장</Label>
               </div>
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="autoLogin"
                   checked={autoLogin}
                   onCheckedChange={(checked) => setAutoLogin(checked === true)}
+                  disabled={isLoading}
                 />
-                <Label htmlFor="autoLogin" className="text-sm">
-                  자동 로그인
-                </Label>
+                <Label htmlFor="autoLogin" className="text-sm">자동 로그인</Label>
               </div>
             </div>
           </CardContent>
           <CardFooter>
-            <Button className="w-full" type="submit" disabled={isLoading}>
-              {isLoading ? (
+            <Button className="w-full" type="submit" disabled={isLoading || authLoading}> {/* authLoading도 고려 */}
+              {isLoading ? ( // 여기서는 페이지 자체의 isLoading 사용
                 <div className="flex items-center">
-                  <svg
-                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
+                  <svg /* SVG 스피너 */ className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"> <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle> <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path> </svg>
                   로그인 중...
                 </div>
               ) : (
-                <div className="flex items-center">
-                  <LogIn className="mr-2 h-4 w-4" /> 로그인
-                </div>
+                <div className="flex items-center"> <LogIn className="mr-2 h-4 w-4" /> 로그인 </div>
               )}
             </Button>
           </CardFooter>
