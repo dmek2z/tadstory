@@ -13,7 +13,7 @@ export async function fetchProducts() {
     const { data, error } = await supabase
       .from('products')
       .select('*')
-      .order('inboundDate', { ascending: false });
+      .order('inbound_at', { ascending: false }); // 'inboundDate'를 'inbound_at'으로 변경
 
     if (error) throw error;
     return (data || []) as Product[];
@@ -26,12 +26,26 @@ export async function fetchProducts() {
 // 제품 추가
 export async function addProduct(product: Omit<Product, 'id'>) {
   try {
+    // API로 전달되는 객체의 키가 DB 컬럼명과 일치해야 합니다.
+    // Product 타입이 storage-context.tsx에서 snake_case로 변경되면, 이 부분은 자동으로 맞게 됩니다.
+    const productDataForDb = {
+      ...product,
+      // 만약 Product 타입이 아직 camelCase라면 여기서 변환 필요
+      // inbound_at: product.inboundDate,
+      // outbound_at: product.outboundDate,
+    };
+    // delete productDataForDb.inboundDate; // 임시 속성 제거
+    // delete productDataForDb.outboundDate; // 임시 속성 제거
+
+
     const { data, error } = await supabase
       .from('products')
-      .insert([product])
+      .insert([productDataForDb])
       .select();
 
     if (error) throw error;
+    // 반환되는 데이터도 Product 타입에 맞게 조정될 필요가 있을 수 있습니다.
+    // Supabase는 기본적으로 snake_case로 컬럼을 반환하므로, Product 타입과 일치해야 합니다.
     return (data || []) as Product[];
   } catch (error) {
     handleError(error, 'add product');
@@ -42,9 +56,20 @@ export async function addProduct(product: Omit<Product, 'id'>) {
 // 제품 수정
 export async function updateProduct(id: string, updates: Partial<Product>) {
   try {
+    // API로 전달되는 객체의 키가 DB 컬럼명과 일치해야 합니다.
+    const updatesForDb: Partial<any> = { ...updates };
+    if ('inbound_at' in updates) {
+      updatesForDb.inbound_at = updates.inbound_at;
+      // delete updatesForDb.inboundDate; // 만약 Product 타입이 아직 camelCase라면
+    }
+    if ('outbound_at' in updates) {
+      updatesForDb.outbound_at = updates.outbound_at;
+      // delete updatesForDb.outboundDate; // 만약 Product 타입이 아직 camelCase라면
+    }
+
     const { data, error } = await supabase
       .from('products')
-      .update(updates)
+      .update(updatesForDb)
       .eq('id', id)
       .select();
 
@@ -335,4 +360,4 @@ export async function deleteProductCode(id: string) {
     handleError(error, 'delete product code');
     return [];
   }
-} 
+}
