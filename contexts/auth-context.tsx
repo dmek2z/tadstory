@@ -28,32 +28,6 @@ interface AuthContextType {
   logout: () => Promise<void>
 }
 
-// 기본 관리자 사용자
-const adminUser: User = {
-  id: "user-1",
-  email: "admin@admin.com",
-  name: "관리자",
-  role: "admin",
-  permissions: ["dashboard", "racks", "products", "history", "users"].map(page => ({
-    page,
-    view: true,
-    edit: true
-  }))
-}
-
-// 테스트 계정 정보
-const testUser: User = {
-  id: "user-test",
-  email: "test@test.com",
-  name: "테스트 계정",
-  role: "user",
-  permissions: ["dashboard", "racks", "products", "history", "users"].map(page => ({
-    page,
-    view: true,
-    edit: true
-  }))
-}
-
 // 인증 컨텍스트 생성
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -66,7 +40,7 @@ export function useAuth() {
   return context;
 }
 
-// Helper function to set a cookie (can be moved to a utils file)
+// Helper function to set a cookie
 const setCookie = (name: string, value: string, days: number) => {
   let expires = "";
   if (days) {
@@ -74,76 +48,48 @@ const setCookie = (name: string, value: string, days: number) => {
     date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
     expires = "; expires=" + date.toUTCString();
   }
-  if (typeof document !== 'undefined') { // Ensure document is defined (client-side)
+  if (typeof document !== 'undefined') {
     document.cookie = name + "=" + (value || "")  + expires + "; path=/";
     console.log(`Cookie set: ${name}=${value}`);
   }
 };
 
-// Helper function to get a cookie (not strictly needed for middleware, but good for consistency)
-const getCookie = (name: string): string | null => {
-  if (typeof document !== 'undefined') {
-    const nameEQ = name + "=";
-    const ca = document.cookie.split(';');
-    for(let i=0; i < ca.length; i++) {
-        let c = ca[i];
-        while (c.charAt(0) === ' ') c = c.substring(1,c.length);
-        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length,c.length);
-    }
-  }
-  return null;
-};
-
 // Helper function to erase a cookie
-const eraseCookie = (name: string) => {   
+const eraseCookie = (name: string) => {
   if (typeof document !== 'undefined') {
-    document.cookie = name+'=; Max-Age=-99999999; path=/';  
+    document.cookie = name+'=; Max-Age=-99999999; path=/';
     console.log(`Cookie erased: ${name}`);
   }
 };
 
 // 인증 프로바이더 컴포넌트
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  console.log("AuthProvider component rendered - Test Log");
+  console.log("AuthProvider component rendered - Initial Log");
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // 초기 로딩 상태 true
   const router = useRouter();
 
   useEffect(() => {
-    console.log("AuthProvider: useEffect triggered, calling initializeAuth");
-    initializeAuth();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    console.log("AuthProvider: useEffect for onAuthStateChange mounted.");
+    setIsLoading(true); // 리스너 설정 시작 시 로딩 상태로
 
-  const initializeAuth = async () => {
-    console.log("initializeAuth: function called");
-    try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      console.log("initializeAuth: getSession response", { session, sessionError });
-
-      if (sessionError) {
-        console.error("initializeAuth: Error getting session:", sessionError);
-        eraseCookie('currentUser'); // Clear cookie on error
-        throw sessionError;
-      }
-      
-      if (session?.user) {
-        console.log("initializeAuth: Session found, user ID:", session.user.id);
+    const fetchAndSetUser = async (sessionUser: any) => {
+      if (sessionUser) {
+        console.log("onAuthStateChange/Initial: Session found, user ID:", sessionUser.id);
         const { data: userData, error: userFetchError } = await supabase
           .from('users')
           .select('*')
-          .eq('id', session.user.id)
+          .eq('id', sessionUser.id)
           .single();
-        console.log("initializeAuth: Fetched user data from 'users' table", { userData, userFetchError });
+        console.log("onAuthStateChange/Initial: Fetched user data from 'users' table", { userData, userFetchError });
 
         if (userFetchError) {
-          console.error("initializeAuth: Error fetching user data from 'users' table:", userFetchError);
-          eraseCookie('currentUser'); // Clear cookie
-          throw userFetchError;
-        }
-
-        if (userData) {
-          console.log("initializeAuth: User data found in 'users' table:", userData);
+          console.error("onAuthStateChange/Initial: Error fetching user data:", userFetchError);
+          setUser(null);
+          eraseCookie('currentUser');
+          localStorage.removeItem('user');
+        } else if (userData) {
+          console.log("onAuthStateChange/Initial: User data found:", userData);
           const userToSet = {
             id: userData.id,
             email: userData.email,
@@ -153,35 +99,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           };
           setUser(userToSet);
           localStorage.setItem('user', JSON.stringify(userToSet));
-          setCookie('currentUser', userToSet.id, 1); // Set cookie with user ID, expires in 1 day
-          console.log("initializeAuth: User state, localStorage, and cookie set:", userToSet);
+          setCookie('currentUser', userToSet.id, 1);
+          console.log("onAuthStateChange/Initial: User state, localStorage, and cookie set:", userToSet);
         } else {
-          console.warn("initializeAuth: No user data found in 'users' table for ID:", session.user.id);
-          setUser(null); 
+          console.warn("onAuthStateChange/Initial: No user data found for ID:", sessionUser.id);
+          setUser(null);
+          eraseCookie('currentUser');
           localStorage.removeItem('user');
-          eraseCookie('currentUser'); // Clear cookie
         }
       } else {
-        console.log("initializeAuth: No active session found.");
+        console.log("onAuthStateChange/Initial: No active session/user.");
         setUser(null);
+        eraseCookie('currentUser');
         localStorage.removeItem('user');
-        eraseCookie('currentUser'); // Clear cookie
       }
-    } catch (error) {
-      console.error('Auth initialization error (overall catch):', error);
+      setIsLoading(false); // 사용자 정보 처리 후 로딩 완료
+      console.log("onAuthStateChange/Initial: fetchAndSetUser finished. isLoading:", false, "User:", user);
+    };
+
+    // 초기 세션 확인
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log("AuthProvider Initial getSession:", session);
+      fetchAndSetUser(session?.user || null);
+    }).catch(error => {
+      console.error("AuthProvider Initial getSession error:", error);
       setUser(null);
+      eraseCookie('currentUser');
       localStorage.removeItem('user');
-      eraseCookie('currentUser'); // Clear cookie
-    } finally {
       setIsLoading(false);
-      console.log("initializeAuth: finished, isLoading set to false. Current user state:", user);
-    }
-  };
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("onAuthStateChange event:", event, "session:", session);
+      setIsLoading(true); // 인증 상태 변경 시작 시 로딩 상태로
+      await fetchAndSetUser(session?.user || null);
+      if (event === 'SIGNED_OUT') {
+         // SIGNED_OUT 시 login 페이지로 리다이렉트, 이미 로그아웃 함수에서 처리하고 있다면 중복될 수 있음
+         // router.push('/login');
+      }
+    });
+
+    return () => {
+      console.log("AuthProvider: useEffect for onAuthStateChange unmounted. Unsubscribing listener.");
+      authListener?.subscription.unsubscribe();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // router를 의존성 배열에서 제거하거나, 꼭 필요하다면 useCallback 등으로 안정화 필요
+
 
   const login = async (email: string, password: string) => {
-    console.log("login: function called with email:", email, "Current isLoading:", isLoading);
-    setIsLoading(true); // Ensure isLoading is true at the beginning
-    console.log("login: setIsLoading(true) called. Current isLoading:", isLoading); // This might show the stale value
+    console.log("login: function called with email:", email);
+    // 로그인 버튼 자체의 로딩 상태는 로컬 state로 관리하거나, AuthContext의 isLoading을 활용.
+    // 여기서는 onAuthStateChange가 AuthContext의 isLoading을 관리하므로, 추가적인 setIsLoading(true)는 생략 가능.
+    // 필요하다면 로그인 시도 중임을 나타내는 별도 상태 사용 고려.
 
     try {
       const { data: { session }, error: signInError } = await supabase.auth.signInWithPassword({
@@ -192,103 +162,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (signInError) {
         console.error("login: Error signing in:", signInError);
-        eraseCookie('currentUser');
-        setIsLoading(false); // Set loading to false on sign-in error
+        // UI에 에러 메시지 표시 (예: react-toastify, Sonner 등)
         throw signInError;
       }
 
-      if (session?.user) {
-        console.log("login: Sign-in successful, user ID:", session.user.id);
-        const { data: userData, error: userFetchError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        console.log("login: Fetched user data from 'users' table", { userData, userFetchError });
-
-        if (userFetchError) {
-          console.error("login: Error fetching user data from 'users' table after sign-in:", userFetchError);
-          eraseCookie('currentUser');
-          setIsLoading(false); // Set loading to false on user fetch error
-          throw userFetchError;
-        }
-
-        if (userData) {
-          console.log("login: User data found in 'users' table:", userData);
-          const userToSet = {
-            id: userData.id,
-            email: userData.email,
-            name: userData.name,
-            role: userData.role,
-            permissions: userData.permissions || []
-          };
-          setUser(userToSet);
-          localStorage.setItem('user', JSON.stringify(userToSet));
-          setCookie('currentUser', userToSet.id, 1); 
-          console.log("login: User state, localStorage, and cookie set.", userToSet, "Current isLoading before push:", isLoading);
-          
-          // Short delay to ensure cookie is processed by the browser before navigation
-          // This is a workaround; ideally, middleware should handle this gracefully.
-          // await new Promise(resolve => setTimeout(resolve, 100)); 
-          // The above delay might not be necessary if isLoading is handled correctly.
-
-          console.log("login: Navigating to /dashboard. isLoading should remain true.");
-          router.push('/dashboard');
-          // DO NOT set isLoading to false here. Let initializeAuth on the new page handle it.
-        } else {
-          console.warn("login: No user data found in 'users' table for ID after sign-in:", session.user.id);
-          setUser(null); 
-          localStorage.removeItem('user');
-          eraseCookie('currentUser');
-          setIsLoading(false); 
-          throw new Error("User profile not found in our records after login.");
-        }
-      } else {
-        console.error("login: No session or user found after successful sign-in call without error. This is unexpected.");
-        setUser(null);
-        localStorage.removeItem('user');
-        eraseCookie('currentUser');
-        setIsLoading(false); 
+      if (!session?.user) {
+        console.error("login: No session or user found after successful sign-in call without error.");
         throw new Error("Login failed: No user session created.");
       }
+      
+      // onAuthStateChange 리스너가 사용자 정보 설정 및 쿠키 설정을 처리함
+      // setUser, setCookie 등은 onAuthStateChange 핸들러로 이동/통합됨
+      // 여기서 isLoading을 true로 설정하고, onAuthStateChange에서 false로 설정
+      console.log("login: Sign-in successful via Supabase. User ID:", session.user.id, "Waiting for onAuthStateChange.");
+      // onAuthStateChange가 isLoading을 false로 설정할 때까지 기다리거나,
+      // 즉시 대시보드로 보내고 onAuthStateChange가 UI를 업데이트하도록 함.
+      // 현재 onAuthStateChange가 isLoading을 관리하므로, login 함수에서는 직접 false로 설정하지 않음.
+      router.push('/dashboard');
+
     } catch (error) {
       console.error('Login error (overall catch):', error);
-      setUser(null);
-      localStorage.removeItem('user');
-      eraseCookie('currentUser');
-      setIsLoading(false); 
-      throw error;
-    } finally {
-      // isLoading should NOT be set to false here in the success path.
-      // It's set to false in error paths within the try-catch block.
-      // For the success path, initializeAuth on the destination page will set it.
-      console.log("login: finally block. Current isLoading:", isLoading, "User state (closure):", user);
+      // setUser(null); // onAuthStateChange가 처리하거나, 필요시 명시적 초기화
+      // eraseCookie('currentUser');
+      // localStorage.removeItem('user');
+      // setIsLoading(false); // onAuthStateChange가 처리하거나, 에러 발생 시 로딩 상태 해제
+      throw error; // 에러를 다시 던져서 호출한 쪽에서 처리할 수 있도록 함
     }
+    // finally 블록에서 isLoading을 false로 설정하지 않음 (onAuthStateChange가 담당)
+    console.log("login: function finished.");
   };
 
   const logout = async () => {
     console.log("logout: function called");
+    // setIsLoading(true); // onAuthStateChange가 처리
     try {
-      setIsLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error("logout: Error signing out:", error);
-        // Even if sign-out fails, attempt to clear local state and cookie
+        // 에러가 발생해도 클라이언트 측 상태는 초기화 시도
       }
-      setUser(null);
-      localStorage.removeItem('user');
-      eraseCookie('currentUser'); // Erase the cookie on logout
-      console.log("logout: User state, localStorage, and cookie cleared. Navigating to /login.");
+      // setUser(null); // onAuthStateChange가 처리
+      // localStorage.removeItem('user');
+      // eraseCookie('currentUser');
+      console.log("logout: SignOut called. Navigating to /login. onAuthStateChange will handle state cleanup.");
       router.push('/login');
     } catch (error) {
       console.error('Logout error (overall catch):', error);
-      // Ensure local state and cookie are cleared even on error
-      setUser(null);
-      localStorage.removeItem('user');
-      eraseCookie('currentUser');
     } finally {
-      setIsLoading(false);
-      console.log("logout: finished. Current user state:", user);
+      // setIsLoading(false); // onAuthStateChange가 처리
+      console.log("logout: function finished.");
     }
   };
 
