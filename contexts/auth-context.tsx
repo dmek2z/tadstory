@@ -15,7 +15,7 @@ export interface Permission {
 export interface User {
   id: string
   email: string
-  name: string
+  name: string // Supabase users 테이블에 name이 없을 경우 null 가능성 고려
   role: string
   permissions: Permission[]
 }
@@ -66,55 +66,57 @@ const eraseCookie = (name: string) => {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   console.log("AuthProvider component rendered - Initial Log");
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // 초기 로딩 상태 true
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
     console.log("AuthProvider: useEffect for onAuthStateChange mounted.");
-    setIsLoading(true); // 리스너 설정 시작 시 로딩 상태로
+    setIsLoading(true);
 
-    const fetchAndSetUser = async (sessionUser: any) => {
+    const fetchAndSetUser = async (sessionUser: any | null) => {
+      let userToLog: User | null = null;
       if (sessionUser) {
-        console.log("onAuthStateChange/Initial: Session found, user ID:", sessionUser.id);
+        console.log("fetchAndSetUser: Session found, user ID:", sessionUser.id);
         const { data: userData, error: userFetchError } = await supabase
-          .from('users')
+          .from('users') // Supabase 'users' 테이블 (auth.users 아님)
           .select('*')
           .eq('id', sessionUser.id)
           .single();
-        console.log("onAuthStateChange/Initial: Fetched user data from 'users' table", { userData, userFetchError });
+        console.log("fetchAndSetUser: Fetched user data from 'users' table", { userData, userFetchError });
 
         if (userFetchError) {
-          console.error("onAuthStateChange/Initial: Error fetching user data:", userFetchError);
+          console.error("fetchAndSetUser: Error fetching user data:", userFetchError);
           setUser(null);
           eraseCookie('currentUser');
           localStorage.removeItem('user');
         } else if (userData) {
-          console.log("onAuthStateChange/Initial: User data found:", userData);
-          const userToSet = {
+          console.log("fetchAndSetUser: User data found:", userData);
+          const userToSet: User = { // User 타입 명시
             id: userData.id,
             email: userData.email,
-            name: userData.name,
+            name: userData.name || sessionUser.email, // name이 null일 경우 email 사용
             role: userData.role,
             permissions: userData.permissions || []
           };
           setUser(userToSet);
           localStorage.setItem('user', JSON.stringify(userToSet));
           setCookie('currentUser', userToSet.id, 1);
-          console.log("onAuthStateChange/Initial: User state, localStorage, and cookie set:", userToSet);
+          userToLog = userToSet;
+          console.log("fetchAndSetUser: User state, localStorage, and cookie set:", userToSet);
         } else {
-          console.warn("onAuthStateChange/Initial: No user data found for ID:", sessionUser.id);
+          console.warn("fetchAndSetUser: No user data found in 'users' table for ID:", sessionUser.id);
           setUser(null);
           eraseCookie('currentUser');
           localStorage.removeItem('user');
         }
       } else {
-        console.log("onAuthStateChange/Initial: No active session/user.");
+        console.log("fetchAndSetUser: No active session/user.");
         setUser(null);
         eraseCookie('currentUser');
         localStorage.removeItem('user');
       }
-      setIsLoading(false); // 사용자 정보 처리 후 로딩 완료
-      console.log("onAuthStateChange/Initial: fetchAndSetUser finished. isLoading:", false, "User:", user);
+      setIsLoading(false);
+      console.log("fetchAndSetUser finished. isLoading: false, Current User for log:", userToLog);
     };
 
     // 초기 세션 확인
@@ -131,12 +133,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("onAuthStateChange event:", event, "session:", session);
-      setIsLoading(true); // 인증 상태 변경 시작 시 로딩 상태로
+      // SIGNED_IN 이벤트 발생 시 fetchAndSetUser 내부에서 setIsLoading(true)를 호출하지 않도록 수정
+      // 전역 isLoading은 여기서 관리
+      if(event !== "INITIAL_SESSION") setIsLoading(true);
+
       await fetchAndSetUser(session?.user || null);
+
       if (event === 'SIGNED_OUT') {
-         // SIGNED_OUT 시 login 페이지로 리다이렉트, 이미 로그아웃 함수에서 처리하고 있다면 중복될 수 있음
-         // router.push('/login');
+         // setUser(null) 및 쿠키 삭제는 fetchAndSetUser(null)에서 처리됨
+         console.log("onAuthStateChange: SIGNED_OUT detected, redirecting to /login");
+         router.push('/login');
       }
+      // INITIAL_SESSION이 아닌 다른 이벤트 후에는 setIsLoading(false)가 fetchAndSetUser에서 호출됨
+      // INITIAL_SESSION의 경우, 위의 getSession().then()에서 이미 처리하므로 중복 호출 방지
+       if(event !== "INITIAL_SESSION") {
+            // setIsLoading(false); // fetchAndSetUser 내부에서 처리
+       }
     });
 
     return () => {
@@ -144,14 +156,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authListener?.subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // router를 의존성 배열에서 제거하거나, 꼭 필요하다면 useCallback 등으로 안정화 필요
+  }, []);
 
 
   const login = async (email: string, password: string) => {
     console.log("login: function called with email:", email);
-    // 로그인 버튼 자체의 로딩 상태는 로컬 state로 관리하거나, AuthContext의 isLoading을 활용.
-    // 여기서는 onAuthStateChange가 AuthContext의 isLoading을 관리하므로, 추가적인 setIsLoading(true)는 생략 가능.
-    // 필요하다면 로그인 시도 중임을 나타내는 별도 상태 사용 고려.
+    setIsLoading(true); // 로그인 시도 시작 시 로딩 상태로
 
     try {
       const { data: { session }, error: signInError } = await supabase.auth.signInWithPassword({
@@ -162,56 +172,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (signInError) {
         console.error("login: Error signing in:", signInError);
-        // UI에 에러 메시지 표시 (예: react-toastify, Sonner 등)
+        setIsLoading(false); // 로그인 실패 시 로딩 상태 해제
         throw signInError;
       }
 
       if (!session?.user) {
         console.error("login: No session or user found after successful sign-in call without error.");
+        setIsLoading(false); // 세션 없음 에러 시 로딩 상태 해제
         throw new Error("Login failed: No user session created.");
       }
-      
-      // onAuthStateChange 리스너가 사용자 정보 설정 및 쿠키 설정을 처리함
-      // setUser, setCookie 등은 onAuthStateChange 핸들러로 이동/통합됨
-      // 여기서 isLoading을 true로 설정하고, onAuthStateChange에서 false로 설정
-      console.log("login: Sign-in successful via Supabase. User ID:", session.user.id, "Waiting for onAuthStateChange.");
-      // onAuthStateChange가 isLoading을 false로 설정할 때까지 기다리거나,
-      // 즉시 대시보드로 보내고 onAuthStateChange가 UI를 업데이트하도록 함.
-      // 현재 onAuthStateChange가 isLoading을 관리하므로, login 함수에서는 직접 false로 설정하지 않음.
+
+      // onAuthStateChange 리스너가 사용자 정보 설정, 쿠키 설정, 최종 isLoading(false)를 처리합니다.
+      // 성공적으로 signInWithPassword가 호출되면 onAuthStateChange가 트리거됩니다.
+      console.log("login: Sign-in successful via Supabase. User ID:", session.user.id, "Waiting for onAuthStateChange to handle user state and redirect.");
+      // router.push('/dashboard'); // onAuthStateChange 핸들러 또는 DashboardLogic에서 리디렉션 관리
+                                  // 또는 여기서 리디렉션하되, onAuthStateChange가 상태를 안정화할 것을 기대.
+                                  // 사용자가 로그인 성공 후 즉시 대시보드로 이동하는 경험을 위해 여기서 push
       router.push('/dashboard');
+      // setIsLoading(false)는 onAuthStateChange의 fetchAndSetUser에서 호출됨
 
     } catch (error) {
       console.error('Login error (overall catch):', error);
-      // setUser(null); // onAuthStateChange가 처리하거나, 필요시 명시적 초기화
-      // eraseCookie('currentUser');
-      // localStorage.removeItem('user');
-      // setIsLoading(false); // onAuthStateChange가 처리하거나, 에러 발생 시 로딩 상태 해제
-      throw error; // 에러를 다시 던져서 호출한 쪽에서 처리할 수 있도록 함
+      // setIsLoading(false)는 각 에러 분기 또는 onAuthStateChange에서 처리
+      // 최종적으로 로딩 상태가 해제되도록 보장해야 함
+      if (isLoading) setIsLoading(false); // catch 블록에서 isLoading이 여전히 true이면 false로 설정
+      throw error;
     }
-    // finally 블록에서 isLoading을 false로 설정하지 않음 (onAuthStateChange가 담당)
     console.log("login: function finished.");
   };
 
   const logout = async () => {
     console.log("logout: function called");
-    // setIsLoading(true); // onAuthStateChange가 처리
+    setIsLoading(true); // 로그아웃 시작 시 로딩 상태로
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error("logout: Error signing out:", error);
-        // 에러가 발생해도 클라이언트 측 상태는 초기화 시도
+        // 에러 발생해도 클라이언트 측 상태는 onAuthStateChange가 처리하도록 유도
       }
-      // setUser(null); // onAuthStateChange가 처리
-      // localStorage.removeItem('user');
-      // eraseCookie('currentUser');
-      console.log("logout: SignOut called. Navigating to /login. onAuthStateChange will handle state cleanup.");
-      router.push('/login');
+      // setUser(null), 쿠키 삭제, localStorage 삭제는 onAuthStateChange (SIGNED_OUT 이벤트)에서 처리됨
+      console.log("logout: Supabase signOut called. onAuthStateChange will handle state cleanup and redirection.");
+      // router.push('/login'); // onAuthStateChange에서 리디렉션 처리하므로 여기서 중복 호출 필요 없음
     } catch (error) {
       console.error('Logout error (overall catch):', error);
-    } finally {
-      // setIsLoading(false); // onAuthStateChange가 처리
-      console.log("logout: function finished.");
+      setIsLoading(false); // 예외 발생 시 로딩 상태 해제
     }
+    // finally { setIsLoading(false); } // onAuthStateChange가 SIGNED_OUT 후 isLoading을 false로 설정
+    console.log("logout: function finished.");
   };
 
   return (
