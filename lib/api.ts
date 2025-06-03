@@ -4,7 +4,10 @@ import type { Product, Rack, Category, ProductCode, User } from '@/contexts/stor
 // Error handling utility
 const handleError = (error: any, operation: string) => {
   console.error(`Error during ${operation}:`, error);
-  throw new Error(`Failed to ${operation}: ${error.message}`);
+  // 실제 애플리케이션에서는 사용자에게 더 친화적인 에러 메시지를 보여주거나,
+  // 에러 로깅 시스템으로 보내는 등의 처리를 할 수 있습니다.
+  // throw new Error(`Failed to ${operation}: ${error.message}`); // 필요에 따라 주석 해제 또는 수정
+  return []; // 에러 발생 시 빈 배열 또는 적절한 기본값 반환 고려
 };
 
 // 제품 전체 조회
@@ -13,60 +16,38 @@ export async function fetchProducts() {
     const { data, error } = await supabase
       .from('products')
       .select('*')
-      .order('inbound_at', { ascending: false }); // 'inboundDate'를 'inbound_at'으로 변경
+      .order('inbound_at', { ascending: false });
 
     if (error) throw error;
     return (data || []) as Product[];
   } catch (error) {
-    handleError(error, 'fetch products');
-    return [];
+    return handleError(error, 'fetch products') as Product[];
   }
 }
 
 // 제품 추가
 export async function addProduct(product: Omit<Product, 'id'>) {
   try {
-    // API로 전달되는 객체의 키가 DB 컬럼명과 일치해야 합니다.
-    // Product 타입이 storage-context.tsx에서 snake_case로 변경되면, 이 부분은 자동으로 맞게 됩니다.
     const productDataForDb = {
       ...product,
-      // 만약 Product 타입이 아직 camelCase라면 여기서 변환 필요
-      // inbound_at: product.inboundDate,
-      // outbound_at: product.outboundDate,
     };
-    // delete productDataForDb.inboundDate; // 임시 속성 제거
-    // delete productDataForDb.outboundDate; // 임시 속성 제거
-
-
     const { data, error } = await supabase
       .from('products')
       .insert([productDataForDb])
       .select();
 
     if (error) throw error;
-    // 반환되는 데이터도 Product 타입에 맞게 조정될 필요가 있을 수 있습니다.
-    // Supabase는 기본적으로 snake_case로 컬럼을 반환하므로, Product 타입과 일치해야 합니다.
     return (data || []) as Product[];
   } catch (error) {
-    handleError(error, 'add product');
-    return [];
+    return handleError(error, 'add product') as Product[];
   }
 }
 
 // 제품 수정
 export async function updateProduct(id: string, updates: Partial<Product>) {
   try {
-    // API로 전달되는 객체의 키가 DB 컬럼명과 일치해야 합니다.
     const updatesForDb: Partial<any> = { ...updates };
-    if ('inbound_at' in updates) {
-      updatesForDb.inbound_at = updates.inbound_at;
-      // delete updatesForDb.inboundDate; // 만약 Product 타입이 아직 camelCase라면
-    }
-    if ('outbound_at' in updates) {
-      updatesForDb.outbound_at = updates.outbound_at;
-      // delete updatesForDb.outboundDate; // 만약 Product 타입이 아직 camelCase라면
-    }
-
+    // DB 컬럼명과 일치하는지 확인 (이미 Product 타입이 snake_case라고 가정)
     const { data, error } = await supabase
       .from('products')
       .update(updatesForDb)
@@ -76,8 +57,7 @@ export async function updateProduct(id: string, updates: Partial<Product>) {
     if (error) throw error;
     return (data || []) as Product[];
   } catch (error) {
-    handleError(error, 'update product');
-    return [];
+    return handleError(error, 'update product') as Product[];
   }
 }
 
@@ -93,8 +73,7 @@ export async function deleteProduct(id: string) {
     if (error) throw error;
     return (data || []) as Product[];
   } catch (error) {
-    handleError(error, 'delete product');
-    return [];
+    return handleError(error, 'delete product') as Product[];
   }
 }
 
@@ -103,53 +82,61 @@ export async function fetchRacks() {
   try {
     const { data, error } = await supabase
       .from('racks')
-      .select('*')
+      .select('*') // '* , rack_products(*)' 와 같이 필요한 경우 관계 테이블도 함께 조회
       .order('name');
 
     if (error) throw error;
     return (data || []) as Rack[];
   } catch (error) {
-    handleError(error, 'fetch racks');
-    return [];
+    return handleError(error, 'fetch racks') as Rack[];
   }
 }
 
 // 랙 추가
 export async function addRack(rack: Omit<Rack, 'id'>) {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { products, ...rackDataForDb } = rack; // 'products' 필드를 분리하여 실제 DB 삽입 객체에서는 제외
+
     const { data, error } = await supabase
       .from('racks')
-      .insert([rack])
+      .insert([rackDataForDb]) // 'products'가 제외된 객체 사용
       .select();
 
     if (error) throw error;
-    return (data || []) as Rack[];
+    // 새로 추가된 랙은 products가 비어있어야 정상입니다.
+    // 반환된 데이터에 products 필드가 없으므로, 필요시 클라이언트에서 []로 채워줍니다.
+    return (data?.map(r => ({...r, products: []})) || []) as Rack[];
   } catch (error) {
-    handleError(error, 'add rack');
-    return [];
+    return handleError(error, 'add rack') as Rack[];
   }
 }
 
 // 랙 수정
 export async function updateRack(id: string, updates: Partial<Rack>) {
   try {
+    // products 필드는 racks 테이블의 컬럼이 아니므로 업데이트 객체에서 제외해야 할 수 있음
+    // 만약 products 업데이트가 rack_products 같은 중간 테이블을 통해 이루어진다면 별도 API 호출 필요
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { products, ...updatesForDb } = updates;
+
     const { data, error } = await supabase
       .from('racks')
-      .update(updates)
+      .update(updatesForDb)
       .eq('id', id)
       .select();
 
     if (error) throw error;
     return (data || []) as Rack[];
   } catch (error) {
-    handleError(error, 'update rack');
-    return [];
+    return handleError(error, 'update rack') as Rack[];
   }
 }
 
 // 랙 삭제
 export async function deleteRack(id: string) {
   try {
+    // 관련 데이터(예: rack_products 테이블의 레코드) 삭제 로직이 필요할 수 있음
     const { data, error } = await supabase
       .from('racks')
       .delete()
@@ -159,8 +146,7 @@ export async function deleteRack(id: string) {
     if (error) throw error;
     return (data || []) as Rack[];
   } catch (error) {
-    handleError(error, 'delete rack');
-    return [];
+    return handleError(error, 'delete rack') as Rack[];
   }
 }
 
@@ -175,8 +161,7 @@ export async function fetchCategories() {
     if (error) throw error;
     return (data || []) as Category[];
   } catch (error) {
-    handleError(error, 'fetch categories');
-    return [];
+    return handleError(error, 'fetch categories') as Category[];
   }
 }
 
@@ -191,8 +176,7 @@ export async function addCategory(category: Omit<Category, 'id'>) {
     if (error) throw error;
     return (data || []) as Category[];
   } catch (error) {
-    handleError(error, 'add category');
-    return [];
+    return handleError(error, 'add category') as Category[];
   }
 }
 
@@ -208,8 +192,7 @@ export async function updateCategory(id: string, updates: Partial<Category>) {
     if (error) throw error;
     return (data || []) as Category[];
   } catch (error) {
-    handleError(error, 'update category');
-    return [];
+    return handleError(error, 'update category') as Category[];
   }
 }
 
@@ -225,8 +208,7 @@ export async function deleteCategory(id: string) {
     if (error) throw error;
     return (data || []) as Category[];
   } catch (error) {
-    handleError(error, 'delete category');
-    return [];
+    return handleError(error, 'delete category') as Category[];
   }
 }
 
@@ -241,41 +223,43 @@ export async function fetchUsers() {
     if (error) throw error;
     return (data || []) as User[];
   } catch (error) {
-    handleError(error, 'fetch users');
-    return [];
+    return handleError(error, 'fetch users') as User[];
   }
 }
 
 // 사용자 추가
 export async function addUser(user: Omit<User, 'id'>) {
   try {
+    // DB에 저장 시 password는 해싱하거나 auth.users 테이블을 사용해야 합니다.
+    // 현재 users 테이블에 직접 저장하는 방식은 보안상 문제가 될 수 있습니다.
+    // 여기서는 전달된 객체 그대로 저장한다고 가정합니다.
+    const { password, ...userToInsert } = user; // 예시: password 필드 제외
     const { data, error } = await supabase
       .from('users')
-      .insert([user])
+      .insert([userToInsert]) // password가 제외된 userToInsert 사용
       .select();
 
     if (error) throw error;
     return (data || []) as User[];
   } catch (error) {
-    handleError(error, 'add user');
-    return [];
+    return handleError(error, 'add user') as User[];
   }
 }
 
 // 사용자 수정
 export async function updateUser(id: string, updates: Partial<User>) {
   try {
+    const { password, ...updatesForDb } = updates; // 예시: password 필드 제외
     const { data, error } = await supabase
       .from('users')
-      .update(updates)
+      .update(updatesForDb)
       .eq('id', id)
       .select();
 
     if (error) throw error;
     return (data || []) as User[];
   } catch (error) {
-    handleError(error, 'update user');
-    return [];
+    return handleError(error, 'update user') as User[];
   }
 }
 
@@ -291,8 +275,7 @@ export async function deleteUser(id: string) {
     if (error) throw error;
     return (data || []) as User[];
   } catch (error) {
-    handleError(error, 'delete user');
-    return [];
+    return handleError(error, 'delete user') as User[];
   }
 }
 
@@ -307,41 +290,55 @@ export async function fetchProductCodes() {
     if (error) throw error;
     return (data || []) as ProductCode[];
   } catch (error) {
-    handleError(error, 'fetch product codes');
-    return [];
+    return handleError(error, 'fetch product codes') as ProductCode[];
   }
 }
 
 // 품목 코드 추가
 export async function addProductCode(productCode: Omit<ProductCode, 'id'>) {
   try {
+    // storage-context.tsx 에서 이미 category_id로 매핑하고 있으므로,
+    // 전달된 productCode 객체가 DB 스키마와 일치한다고 가정합니다.
+    // 만약 ProductCode 타입에 category가 있고 DB에 category_id만 있다면,
+    // context에서 category_id: productCode.category, delete productCode.category 처리가 필요합니다.
+    // 현재는 lib/api.ts로 전달된 productCode 객체가 DB 삽입에 적합하다고 가정합니다.
+    const { category, ...productCodeForDb } = productCode as any; // 'category'가 있다면 분리
+    if (category && !productCodeForDb.category_id) { // category_id가 없고 category가 있다면 변환
+         productCodeForDb.category_id = category;
+    }
+
+
     const { data, error } = await supabase
       .from('product_codes')
-      .insert([productCode])
+      .insert([productCodeForDb]) // category 필드가 아닌 category_id를 사용하도록 이미 컨텍스트에서 처리되었거나 여기서 조정
       .select();
 
     if (error) throw error;
     return (data || []) as ProductCode[];
   } catch (error) {
-    handleError(error, 'add product code');
-    return [];
+    return handleError(error, 'add product code') as ProductCode[];
   }
 }
 
 // 품목 코드 수정
 export async function updateProductCode(id: string, updates: Partial<ProductCode>) {
   try {
+    // 위와 동일하게 category vs category_id 처리 필요
+    const { category, ...updatesForDb } = updates as any;
+    if (category && !updatesForDb.category_id) {
+        updatesForDb.category_id = category;
+    }
+
     const { data, error } = await supabase
       .from('product_codes')
-      .update(updates)
+      .update(updatesForDb)
       .eq('id', id)
       .select();
 
     if (error) throw error;
     return (data || []) as ProductCode[];
   } catch (error) {
-    handleError(error, 'update product code');
-    return [];
+    return handleError(error, 'update product code') as ProductCode[];
   }
 }
 
@@ -357,7 +354,6 @@ export async function deleteProductCode(id: string) {
     if (error) throw error;
     return (data || []) as ProductCode[];
   } catch (error) {
-    handleError(error, 'delete product code');
-    return [];
+    return handleError(error, 'delete product code') as ProductCode[];
   }
 }
