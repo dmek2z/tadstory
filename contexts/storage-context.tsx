@@ -1,8 +1,7 @@
 "use client"
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'; // useCallback 추가
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
-  // ... (기존 임포트 유지)
   fetchProducts, fetchRacks, fetchCategories, fetchUsers, fetchProductCodes,
   addProduct as apiAddProduct, updateProduct as apiUpdateProduct, deleteProduct as apiDeleteProduct,
   addRack as apiAddRack, updateRack as apiUpdateRack, deleteRack as apiDeleteRack,
@@ -12,7 +11,7 @@ import {
 } from '@/lib/api';
 import { supabase } from '@/lib/supabaseClient';
 
-// Types (기존 정의 유지)
+// Types
 export interface Product {
   id: string
   code: string
@@ -22,24 +21,25 @@ export interface Product {
   manufacturer: string
   floor?: number
 }
-// ... (Rack, ProductCode, Category, User, StockMovement 인터페이스 정의 유지) ...
+
 export interface Rack {
   id: string
   name: string
-  products: Product[]
+  products: Product[] // 이 products 배열은 클라이언트 상태용이며, racks DB 테이블의 컬럼이 아님
   capacity: number
   line: string
 }
 
-export interface ProductCode {
-  id: string
-  code: string
-  name: string
-  description: string
-  category: string 
-  storage_temp: number 
-  created_at: string 
-  updated_at: string 
+export interface ProductCode { // DB의 product_codes 테이블과 일치하도록
+  id: string          // uuid
+  code: string        // text, unique
+  name: string        // text
+  description: string // text
+  category: string    // 클라이언트 측에서는 category_id를 이 필드에 담아서 사용 (string 또는 Category['id'] 타입)
+  storage_temp: number// numeric (예시, 실제 DB 컬럼에 따라 조정)
+  created_at: string  // timestamptz
+  updated_at: string  // timestamptz
+  // category_id?: string // DB에는 이게 있고, 클라이언트 ProductCode에는 category로 통일 (선택적)
 }
 
 export interface Category {
@@ -48,51 +48,48 @@ export interface Category {
   created_at: string
 }
 
-export interface User { 
-  id: string; 
-  email: string; 
-  name: string; 
-  role: string; 
-  password?: string 
-  status: "active" | "inactive" 
-  permissions: { page: string; view: boolean; edit: boolean }[] 
+export interface User { // DB의 users 테이블 스키마와 일치
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  password?: string // 로컬 전용, DB 저장 안 함
+  status: "active" | "inactive" // 애플리케이션 레벨에서 관리 (DB 스키마에 없다면)
+  permissions: { page: string; view: boolean; edit: boolean }[]
 }
 
-
-export interface StockMovement { 
-  id: string; 
-  user_id: string; 
-  product_id: string; 
-  rack_id?: string; 
-  type: "IN" | "OUT" | "MOVE" | string; 
-  quantity: number; 
-  moved_at: string; 
-  details?: string; 
+export interface StockMovement {
+  id: string;
+  user_id: string;
+  product_id: string;
+  rack_id?: string;
+  type: "IN" | "OUT" | "MOVE" | string;
+  quantity: number;
+  moved_at: string;
+  details?: string;
 }
-
 
 interface StorageContextType {
-  // ... (기존 타입 유지)
   products: Product[]
   addProduct: (product: Omit<Product, 'id'>) => Promise<Product | undefined>
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>
   deleteProduct: (id: string) => Promise<void>
 
   racks: Rack[]
-  addRack: (rack: Omit<Rack, 'id'>) => Promise<Rack | undefined>
-  updateRack: (id: string, updates: Partial<Rack>) => Promise<void>
+  addRack: (rack: Omit<Rack, 'id' | 'products'>) => Promise<Rack | undefined> // products는 DB에 직접 저장 안 함
+  updateRack: (id: string, updates: Partial<Omit<Rack, 'products'>>) => Promise<void> // products는 별도 관리
   deleteRack: (id: string) => Promise<void>
 
   productCodes: ProductCode[]
   setProductCodes: React.Dispatch<React.SetStateAction<ProductCode[]>>
-  addProductCode: (productCode: Omit<ProductCode, 'id'>) => Promise<ProductCode | undefined>
-  updateProductCode: (id: string, updates: Partial<ProductCode>) => Promise<void>
+  addProductCode: (productCode: Omit<ProductCode, 'id' | 'created_at' | 'updated_at'>) => Promise<ProductCode | undefined>
+  updateProductCode: (id: string, updates: Partial<Omit<ProductCode, 'id' | 'created_at' | 'updated_at'>>) => Promise<void>
   deleteProductCode: (id: string) => Promise<void>
 
   categories: Category[]
   setCategories: React.Dispatch<React.SetStateAction<Category[]>>
-  addCategory: (category: Omit<Category, 'id'>) => Promise<Category | undefined>
-  updateCategory: (id: string, updates: Partial<Category>) => Promise<void>
+  addCategory: (category: Omit<Category, 'id' | 'created_at'>) => Promise<Category | undefined>
+  updateCategory: (id: string, updates: Partial<Omit<Category, 'id' | 'created_at'>>) => Promise<void>
   deleteCategory: (id: string) => Promise<void>
 
   users: User[]
@@ -102,7 +99,6 @@ interface StorageContextType {
 
   stockMovements: StockMovement[]
   lastUpdated: number
-
   isLoading: boolean
   refreshData: () => Promise<void>
 }
@@ -113,7 +109,6 @@ interface StorageProviderProps {
   children: React.ReactNode
 }
 
-// 디바운스 함수
 function debounce<T extends (...args: any[]) => any>(func: T, delay: number): (...args: Parameters<T>) => void {
   let timeoutId: ReturnType<typeof setTimeout>;
   return function(this: ThisParameterType<T>, ...args: Parameters<T>) {
@@ -121,7 +116,6 @@ function debounce<T extends (...args: any[]) => any>(func: T, delay: number): (.
     timeoutId = setTimeout(() => func.apply(this, args), delay);
   };
 }
-
 
 export function StorageProvider({ children }: StorageProviderProps) {
   const [products, setProductsState] = useState<Product[]>([]);
@@ -145,32 +139,32 @@ export function StorageProvider({ children }: StorageProviderProps) {
 
   const mapProductToDb = (product: Partial<Product> | Omit<Product, 'id'>): any => {
     const dbProduct: any = { ...product };
-    if ('inbound_at' in product) dbProduct.inbound_at = product.inbound_at;
-    if ('outbound_at' in product) dbProduct.outbound_at = product.outbound_at;
     return dbProduct;
   };
 
-  const refreshData = useCallback(async () => { // useCallback으로 감싸기
+  const refreshData = useCallback(async () => {
     console.log("StorageContext: refreshData called");
     setIsLoadingState(true);
     try {
-      const [productsDataDb, racksDataDb, categoriesDataDb, usersDataDb, productCodesDataDb, activityLogsDataDb] = await Promise.all([
+      const [
+        productsDataDb, 
+        racksDataDb, 
+        categoriesDataDb, 
+        usersDataDb, 
+        productCodesDataDb, 
+        activityLogsDataDb
+      ] = await Promise.all([
         supabase.from('products').select('*'),
         supabase.from('racks').select('*, rack_products(product_id, floor, inbound_date, outbound_date)'),
-        supabase.from('categories').select('*'),
-        supabase.from('users').select('*'),
-        supabase.from('product_codes').select('*'),
+        supabase.from('categories').select('*').order('name'),
+        supabase.from('users').select('*').order('name'),
+        supabase.from('product_codes').select('*, category_id').order('code'), // category_id를 명시적으로 가져옴
         supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(50)
       ]);
 
-      // 에러 처리 강화
       const errors = [
-        productsDataDb.error, 
-        racksDataDb.error, 
-        categoriesDataDb.error, 
-        usersDataDb.error, 
-        productCodesDataDb.error, 
-        activityLogsDataDb.error
+        productsDataDb.error, racksDataDb.error, categoriesDataDb.error, 
+        usersDataDb.error, productCodesDataDb.error, activityLogsDataDb.error
       ].filter(Boolean);
 
       if (errors.length > 0) {
@@ -217,14 +211,14 @@ export function StorageProvider({ children }: StorageProviderProps) {
         permissions: u.permissions || [],
         status: 'active', 
       })) as User[]);
-
+      
       setProductCodesState((productCodesDataDb.data || []).map(pc => ({
         id: pc.id,
         code: pc.code,
         name: pc.name,
         description: pc.description,
-        category: pc.category_id, 
-        storage_temp: -18, 
+        category: pc.category_id, // DB의 category_id를 사용
+        storage_temp: pc.storage_temp || -18, // DB에 storage_temp가 있다면 사용, 없다면 기본값
         created_at: pc.created_at,
         updated_at: pc.updated_at,
       })) as ProductCode[]);
@@ -235,9 +229,9 @@ export function StorageProvider({ children }: StorageProviderProps) {
         product_id: log.product_id || 'N/A', 
         rack_id: log.rack_id, 
         type: log.action, 
-        quantity: parseInt(log.action.match(/\d+/)?.[0] || "0"), 
+        quantity: parseInt(log.details?.match(/\d+/)?.[0] || log.action?.match(/\d+/)?.[0] || "0"), // details 우선, 없으면 action에서 파싱
         moved_at: log.created_at,
-        details: log.action,
+        details: log.details || log.action,
       })) as StockMovement[]);
 
       setLastRefreshState(Date.now());
@@ -248,30 +242,25 @@ export function StorageProvider({ children }: StorageProviderProps) {
       setIsLoadingState(false);
       console.log("StorageContext: refreshData finished, isLoading:", false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 의존성 배열을 비워서 mount 시에만 생성되도록 함 (내부에서 사용하는 상태는 setState로 관리)
+  }, []); // 의존성 배열 비워서 마운트 시에만 함수 정의
 
-  // 실시간 변경 감지 시 디바운스된 refreshData 호출
-  const debouncedRefreshData = useCallback(debounce(refreshData, 1000), [refreshData]); // 1초 디바운스
+  const debouncedRefreshData = useCallback(debounce(refreshData, 1000), [refreshData]);
 
   useEffect(() => {
-    // 초기 데이터 로드 (StorageProvider가 마운트될 때 한 번만)
-    refreshData();
+    refreshData(); // 초기 데이터 로드
 
     const changes = supabase
       .channel('public-schema-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
         console.log('StorageContext: DB Change received!', payload);
-        debouncedRefreshData(); // 디바운스된 함수 호출
+        debouncedRefreshData();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(changes);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedRefreshData]); // refreshData는 useCallback으로 감싸져 있으므로, debouncedRefreshData도 안정적
-
+  }, [refreshData, debouncedRefreshData]); // refreshData와 debouncedRefreshData를 의존성 배열에 추가
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -280,35 +269,33 @@ export function StorageProvider({ children }: StorageProviderProps) {
         console.log("StorageContext: Interval refresh triggered");
         refreshData();
       }
-    }, 60 * 1000); // 1분마다 체크
+    }, 60 * 1000); 
 
     return () => clearInterval(intervalId);
-  }, [lastRefresh, refreshData]); // refreshData 의존성 추가
+  }, [lastRefresh, refreshData]);
 
-  // ... (기존 CRUD 함수들은 그대로 유지)
   // Products
   const addProductToStorage = async (product: Omit<Product, 'id'>): Promise<Product | undefined> => {
     try {
       const dbProduct = mapProductToDb(product);
-      const result = await apiAddProduct(dbProduct as Omit<Product, 'id'>);
+      const result = await apiAddProduct(dbProduct);
       if (result && result.length > 0) {
         const newProduct = mapProductFromDb(result[0]);
-        // setProductsState(prev => [...prev, newProduct]); // 실시간 업데이트가 refreshData를 호출하므로 중복될 수 있음
-        // refreshData(); // 또는 여기서 직접 호출
+        // debouncedRefreshData(); // 실시간 구독이 처리하도록 유도
         return newProduct;
       }
       throw new Error('Failed to add product: No data returned');
     } catch (error) {
       console.error('Error adding product:', error);
-      throw error;
+      throw error; // 에러를 다시 throw하여 호출부에서 처리할 수 있도록 함
     }
   };
 
   const updateProductInStorage = async (id: string, updates: Partial<Product>) => {
     try {
       const dbUpdates = mapProductToDb(updates);
-      await apiUpdateProduct(id, dbUpdates as Partial<Product>);
-      // refreshData(); 
+      await apiUpdateProduct(id, dbUpdates);
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error updating product:', error);
       throw error;
@@ -318,7 +305,7 @@ export function StorageProvider({ children }: StorageProviderProps) {
   const deleteProductFromStorage = async (id: string) => {
     try {
       await apiDeleteProduct(id);
-      // refreshData();
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error deleting product:', error);
       throw error;
@@ -326,12 +313,13 @@ export function StorageProvider({ children }: StorageProviderProps) {
   };
 
   // Racks
-  const addRackToStorage = async (rack: Omit<Rack, 'id'>): Promise<Rack | undefined> => {
+  const addRackToStorage = async (rack: Omit<Rack, 'id' | 'products'>): Promise<Rack | undefined> => {
     try {
+      // apiAddRack은 이미 lib/api.ts에서 'products'를 제외한 객체를 받도록 수정됨
       const result = await apiAddRack(rack);
       if (result && result.length > 0) {
-        // refreshData();
-        return result[0]; 
+        // debouncedRefreshData();
+        return {...result[0], products: []}; // 클라이언트 타입에 맞게 products: [] 추가
       }
       throw new Error('Failed to add rack: No data returned');
     } catch (error) {
@@ -340,10 +328,10 @@ export function StorageProvider({ children }: StorageProviderProps) {
     }
   };
 
-  const updateRackInStorage = async (id: string, updates: Partial<Rack>) => {
+  const updateRackInStorage = async (id: string, updates: Partial<Omit<Rack, 'products'>>) => {
     try {
       await apiUpdateRack(id, updates);
-      // refreshData();
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error updating rack:', error);
       throw error;
@@ -353,7 +341,7 @@ export function StorageProvider({ children }: StorageProviderProps) {
   const deleteRackFromStorage = async (id: string) => {
     try {
       await apiDeleteRack(id);
-      // refreshData();
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error deleting rack:', error);
       throw error;
@@ -361,17 +349,22 @@ export function StorageProvider({ children }: StorageProviderProps) {
   };
 
   // Product Codes
-  const addProductCodeToStorage = async (productCode: Omit<ProductCode, 'id'>): Promise<ProductCode | undefined> => {
+  const addProductCodeToStorage = async (productCode: Omit<ProductCode, 'id' | 'created_at' | 'updated_at'>): Promise<ProductCode | undefined> => {
     try {
-      const dbProductCode = {
-        ...productCode,
-        category_id: productCode.category, 
+      const { category, ...restOfProductCode } = productCode;
+      const dbProductCodePayload = {
+        ...restOfProductCode,
+        category_id: category, // 'category' (ID)를 'category_id'로 매핑
       };
-
-      const result = await apiAddProductCode(dbProductCode as Omit<ProductCode, 'id'>);
+      
+      const result = await apiAddProductCode(dbProductCodePayload as any); // apiAddProductCode는 category_id를 가진 객체를 기대
       if (result && result.length > 0) {
-        // refreshData();
-        return result[0];
+        const newDbData = result[0] as any;
+        // debouncedRefreshData();
+        return { // 클라이언트 ProductCode 타입으로 다시 매핑
+            ...newDbData,
+            category: newDbData.category_id 
+        };
       }
       throw new Error('Failed to add product code: No data returned');
     } catch (error) {
@@ -380,15 +373,17 @@ export function StorageProvider({ children }: StorageProviderProps) {
     }
   };
 
-  const updateProductCodeInStorage = async (id: string, updates: Partial<ProductCode>) => {
+  const updateProductCodeInStorage = async (id: string, updates: Partial<Omit<ProductCode, 'id' | 'created_at' | 'updated_at'>>) => {
     try {
-      const dbUpdates: Partial<any> = { ...updates };
-      if ('category' in updates) {
-        dbUpdates.category_id = updates.category;
-        delete dbUpdates.category;
+      const { category, ...restOfUpdates } = updates;
+      const dbUpdatesPayload: Partial<any> = { ...restOfUpdates };
+
+      if (category !== undefined) {
+        dbUpdatesPayload.category_id = category;
       }
-      await apiUpdateProductCode(id, dbUpdates as Partial<ProductCode>);
-      // refreshData();
+      
+      await apiUpdateProductCode(id, dbUpdatesPayload as any);
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error updating product code:', error);
       throw error;
@@ -398,7 +393,7 @@ export function StorageProvider({ children }: StorageProviderProps) {
   const deleteProductCodeFromStorage = async (id: string) => {
     try {
       await apiDeleteProductCode(id);
-      // refreshData();
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error deleting product code:', error);
       throw error;
@@ -406,11 +401,11 @@ export function StorageProvider({ children }: StorageProviderProps) {
   };
 
   // Categories
-  const addCategoryToStorage = async (category: Omit<Category, 'id'>): Promise<Category | undefined> => {
+  const addCategoryToStorage = async (category: Omit<Category, 'id' | 'created_at'>): Promise<Category | undefined> => {
     try {
       const result = await apiAddCategory(category);
       if (result && result.length > 0) {
-        // refreshData();
+        // debouncedRefreshData();
         return result[0];
       }
        throw new Error('Failed to add category: No data returned');
@@ -420,10 +415,10 @@ export function StorageProvider({ children }: StorageProviderProps) {
     }
   };
 
-  const updateCategoryInStorage = async (id: string, updates: Partial<Category>) => {
+  const updateCategoryInStorage = async (id: string, updates: Partial<Omit<Category, 'id' | 'created_at'>>) => {
     try {
       await apiUpdateCategory(id, updates);
-      // refreshData();
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error updating category:', error);
       throw error;
@@ -433,7 +428,7 @@ export function StorageProvider({ children }: StorageProviderProps) {
   const deleteCategoryFromStorage = async (id: string) => {
     try {
       await apiDeleteCategory(id);
-      // refreshData();
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error deleting category:', error);
       throw error;
@@ -443,9 +438,13 @@ export function StorageProvider({ children }: StorageProviderProps) {
   // Users
   const addUserToStorage = async (user: Omit<User, 'id'>): Promise<User | undefined> => {
     try {
-      const result = await apiAddUser(user); // 실제 API 호출 시 password는 제외하거나 해싱 처리 필요
+      // DB에 저장 시 password는 해싱하거나 auth.users 테이블을 사용해야 함.
+      // 현재 users 테이블에 직접 저장하는 방식은 보안상 문제가 될 수 있으므로,
+      // 실제 API 호출 시 password는 제외하거나 별도 처리 필요.
+      const { password, ...userToInsert } = user;
+      const result = await apiAddUser(userToInsert as Omit<User, 'id' | 'password'>);
        if (result && result.length > 0) {
-        // refreshData();
+        // debouncedRefreshData();
         return result[0];
       }
       throw new Error('Failed to add user: No data returned');
@@ -457,8 +456,9 @@ export function StorageProvider({ children }: StorageProviderProps) {
 
   const updateUserInStorage = async (id: string, updates: Partial<User>) => {
     try {
-      await apiUpdateUser(id, updates); // 실제 API 호출 시 password는 제외하거나 해싱 처리 필요
-      // refreshData();
+      const { password, ...updatesForDb } = updates;
+      await apiUpdateUser(id, updatesForDb);
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error updating user:', error);
       throw error;
@@ -468,48 +468,24 @@ export function StorageProvider({ children }: StorageProviderProps) {
   const deleteUserFromStorage = async (id: string) => {
     try {
       await apiDeleteUser(id);
-      // refreshData();
+      // debouncedRefreshData();
     } catch (error) {
       console.error('Error deleting user:', error);
       throw error;
     }
   };
 
-
   return (
     <StorageContext.Provider value={{
-      products,
-      addProduct: addProductToStorage,
-      updateProduct: updateProductInStorage,
-      deleteProduct: deleteProductFromStorage,
-
-      racks,
-      addRack: addRackToStorage,
-      updateRack: updateRackInStorage,
-      deleteRack: deleteRackFromStorage,
-
-      productCodes,
-      setProductCodes: setProductCodesState, 
-      addProductCode: addProductCodeToStorage,
-      updateProductCode: updateProductCodeInStorage,
-      deleteProductCode: deleteProductCodeFromStorage,
-
-      categories,
-      setCategories: setCategoriesState, 
-      addCategory: addCategoryToStorage,
-      updateCategory: updateCategoryInStorage,
-      deleteCategory: deleteCategoryFromStorage,
-
-      users,
-      addUser: addUserToStorage,
-      updateUser: updateUserInStorage,
-      deleteUser: deleteUserFromStorage,
-
+      products, addProduct: addProductToStorage, updateProduct: updateProductInStorage, deleteProduct: deleteProductFromStorage,
+      racks, addRack: addRackToStorage, updateRack: updateRackInStorage, deleteRack: deleteRackFromStorage,
+      productCodes, setProductCodes: setProductCodesState, addProductCode: addProductCodeToStorage, updateProductCode: updateProductCodeInStorage, deleteProductCode: deleteProductCodeFromStorage,
+      categories, setCategories: setCategoriesState, addCategory: addCategoryToStorage, updateCategory: updateCategoryInStorage, deleteCategory: deleteCategoryFromStorage,
+      users, addUser: addUserToStorage, updateUser: updateUserInStorage, deleteUser: deleteUserFromStorage,
       stockMovements,
       lastUpdated: lastRefresh,
-
       isLoading,
-      refreshData // useCallback으로 감싸진 함수 전달
+      refreshData
     }}>
       {children}
     </StorageContext.Provider>
