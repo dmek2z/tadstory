@@ -5,12 +5,14 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
+// 사용자 권한 타입
 export interface Permission {
   page: string
   view: boolean
   edit: boolean
 }
 
+// 사용자 타입
 export interface User {
   id: string
   email: string
@@ -19,15 +21,19 @@ export interface User {
   permissions: Permission[]
 }
 
+// 인증 컨텍스트 타입
 interface AuthContextType {
   user: User | null
   isLoading: boolean
-  login: (email: string, password: string) => Promise<boolean> // 반환 타입 boolean으로 명시
+  login: (email: string, password: string) => Promise<boolean>
   logout: () => Promise<void>
+  hasPermission: (pageId: string, permissionType: "view" | "edit") => boolean // 추가
 }
 
+// 인증 컨텍스트 생성
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// 인증 컨텍스트 훅
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
@@ -115,19 +121,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             eraseCookie('currentUser');
             localStorage.removeItem('user');
         }
-        // onAuthStateChange의 INITIAL_SESSION 이벤트에서 setIsLoading(false)를 최종적으로 호출
     }).catch(error => {
         console.error("AuthProvider: Error during initial getSession:", error);
         setUser(null);
         eraseCookie('currentUser');
         localStorage.removeItem('user');
-        setIsLoading(false);
+        setIsLoading(false); 
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log(`AuthProvider: onAuthStateChange - Event: ${event}, User: ${session?.user?.id || 'null'}`);
       
-      // USER_UPDATED, PASSWORD_RECOVERY 등 백그라운드성 이벤트는 UI 로딩 상태를 변경하지 않음
       if (event !== 'USER_UPDATED' && event !== 'PASSWORD_RECOVERY') {
           setIsLoading(true);
           console.log("AuthProvider: onAuthStateChange - setIsLoading(true) for event:", event);
@@ -137,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (event === 'SIGNED_OUT') {
         console.log("AuthProvider: onAuthStateChange - SIGNED_OUT, redirecting to /login");
-        router.push('/login'); // 로그아웃 시 로그인 페이지로 강제 이동
+        router.push('/login');
       }
       
       if (event !== 'USER_UPDATED' && event !== 'PASSWORD_RECOVERY') {
@@ -151,13 +155,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authListener?.subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); 
 
 
   const login = async (email: string, password: string): Promise<boolean> => {
     console.log("AuthProvider: login function called with email:", email);
-    // setIsLoading(true); // 이 함수 내에서는 isLoading을 직접 제어하지 않음
-
     try {
       const { data: { session: supabaseSession }, error: signInError } = await supabase.auth.signInWithPassword({
         email,
@@ -167,44 +169,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (signInError) {
         console.error("AuthProvider: login - Error signing in:", signInError);
-        return false; // 실패 시 false 반환
+        return false;
       }
-
       if (!supabaseSession?.user) {
         console.error("AuthProvider: login - No session or user after successful signIn (unexpected).");
-        return false; // 실패 시 false 반환
+        return false;
       }
-      
       console.log("AuthProvider: login - signInWithPassword successful. User ID:", supabaseSession.user.id);
-      // onAuthStateChange가 SIGNED_IN 이벤트를 처리하여 currentUser와 isLoading을 업데이트할 것임
-      return true; // 성공 시 true 반환
-
+      return true;
     } catch (error) {
       console.error('AuthProvider: login - Overall error:', error);
-      return false; // 에러 발생 시 false 반환
+      return false;
     }
   };
 
   const logout = async () => {
     console.log("AuthProvider: logout function called");
-    // setIsLoading(true); // onAuthStateChange가 SIGNED_OUT 이벤트에서 처리
-
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error("AuthProvider: logout - Error signing out:", error);
         throw error;
       }
-      // onAuthStateChange가 SIGNED_OUT 이벤트를 처리
       console.log("AuthProvider: logout - supabase.auth.signOut() successful. Waiting for onAuthStateChange.");
     } catch (error) {
       console.error('AuthProvider: logout - Overall error:', error);
-      // setIsLoading(false)도 onAuthStateChange에서 처리
     }
   };
 
+  // 여기에 hasPermission 함수 정의
+  const hasPermission = (pageId: string, permissionType: "view" | "edit"): boolean => {
+    // console.log("AuthContext hasPermission called for:", { pageId, permissionType, userRole: user?.role, isLoading });
+    if (isLoading || !user) { // AuthProvider의 isLoading과 user 사용
+      // console.log("AuthContext hasPermission: auth loading or no user, returning false.");
+      return false; 
+    }
+    if (user.role && user.role.trim() === "admin") {
+      // console.log("AuthContext hasPermission: user is admin, returning true.");
+      return true; 
+    }
+    const permission = user.permissions.find((p: Permission) => p.page === pageId);
+    const result = permission ? permission[permissionType] : false;
+    // console.log("AuthContext hasPermission: found permission object:", permission, "Result:", result);
+    return result;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, hasPermission }}> {/* hasPermission 추가 */}
       {children}
     </AuthContext.Provider>
   );
