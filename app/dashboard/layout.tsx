@@ -1,19 +1,19 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react" // useEffect 추가 (필요시)
+import { useState } from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation" // useRouter 추가
-import { Grid3x3, History, Home, LogOut, Package, Settings, Users, Menu as MenuIcon } from "lucide-react" // MenuIcon 추가
+import { usePathname, useRouter } from "next/navigation" 
+import { Grid3x3, History, Home, LogOut, Package, Settings, Users, Menu as MenuIcon } from "lucide-react" 
 import Image from "next/image"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { StorageProvider } from "@/contexts/storage-context"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu" // DropdownMenuTrigger 추가
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/contexts/auth-context"
-import DashboardLogic from "@/components/DashboardLogic"
+import DashboardLogic from "@/components/DashboardLogic" // 이 컴포넌트는 위에서 수정된 버전 사용
 import type { Permission } from "@/contexts/auth-context"
 
 
@@ -39,40 +39,41 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname();
-  const router = useRouter(); // DashboardLayout에서도 router 사용 가능하도록 추가
+  const router = useRouter();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const { user, logout, isLoading: authIsLoading, hasPermission } = useAuth();
-
+  const { user, logout, isLoading: authIsLoading, hasPermission } = useAuth(); // user도 가져옵니다.
 
   const accessibleNavItems = navItems.filter((item) => {
-    // settings 페이지는 user가 있으면 항상 접근 가능, 그 외에는 hasPermission 사용
+    if (authIsLoading) return false; // 로딩 중에는 메뉴를 계산하지 않거나 빈 배열 반환
     if (item.id === "settings") return !!user; 
     return hasPermission(item.id, "view");
   });
 
-  // 최우선: AuthProvider가 로딩 중이면 무조건 로딩 화면 표시
+  // ** 로딩 조건 변경: authIsLoading이 true인 동안만 로딩 화면 표시 **
   if (authIsLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <p>Loading application...</p>
+        <p>Loading application (authIsLoading is true)...</p>
       </div>
     );
   }
-  
-  // AuthProvider 로딩이 끝났으나 사용자가 없는 경우 (DashboardLogic이 리디렉션 처리)
-  // 이 경우 DashboardLogic이 /login으로 보낼 것이므로, 여기서 null을 반환하여 렌더링을 막거나,
-  // DashboardLogic이 children을 렌더링하지 않도록 처리해야 함.
-  // DashboardLogic에서 이미 처리하고 있으므로, 여기서는 DashboardLogic을 신뢰하고 진행.
+
+  // ** authIsLoading이 false가 된 후, user가 없으면 DashboardLogic에서 로그인 페이지로 보낼 것임 **
+  // ** 또는 여기서 명시적으로 처리할 수도 있지만, DashboardLogic의 역할과 중복될 수 있음 **
+  // if (!user) {
+  //   // router.replace('/login'); // DashboardLogic에서 처리하도록 유도
+  //   return <p>Redirecting to login (user is null)...</p>; // 혹은 DashboardLogic이 children을 렌더링하지 않도록
+  // }
 
   return (
     <StorageProvider>
-      <DashboardLogic> {/* DashboardLogic이 인증 및 권한에 따른 리디렉션 처리 */}
+      <DashboardLogic> {/* DashboardLogic의 내부 로직은 위에서 비활성화한 상태로 테스트 */}
         <div className="flex min-h-screen flex-col">
           <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6">
             <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
               <SheetTrigger asChild>
                 <Button variant="outline" size="icon" className="md:hidden" aria-label="메뉴 열기">
-                  <MenuIcon className="h-5 w-5" /> {/* 아이콘 변경 */}
+                  <MenuIcon className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-72">
@@ -87,7 +88,7 @@ export default function DashboardLayout({
                     />
                   </div>
                   <nav className="grid gap-2">
-                    {accessibleNavItems.map((item) => (
+                    {accessibleNavItems.map((item) => ( // user가 있을 때만 메뉴 아이템을 보여주도록 수정 가능
                       <Link
                         key={item.href}
                         href={item.href}
@@ -124,29 +125,23 @@ export default function DashboardLayout({
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                    {hasPermission("settings", "view") && ( // settings는 view 권한만 체크 (또는 user 존재 여부만)
+                    {hasPermission("settings", "view") && (
                         <DropdownMenuItem asChild>
                         <Link href="/dashboard/settings">설정</Link>
                         </DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={async () => {
                         await logout();
-                        // 로그아웃 후 /login으로의 리디렉션은 AuthProvider의 onAuthStateChange에서 처리
                     }}>로그아웃</DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
-                {/* 중복 로그아웃 버튼 제거 가능
-                <Button variant="ghost" size="icon" onClick={logout} aria-label="로그아웃">
-                  <LogOut className="h-5 w-5" />
-                </Button>
-                */}
               </div>
             )}
           </header>
           <div className="flex flex-1">
             <aside className="hidden w-64 border-r bg-muted/40 md:block">
               <nav className="grid gap-2 p-4">
-                {accessibleNavItems.map((item) => (
+                {accessibleNavItems.map((item) => ( // user가 있을 때만 메뉴 아이템을 보여주도록 수정 가능
                   <Link
                     key={item.href}
                     href={item.href}
