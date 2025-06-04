@@ -55,15 +55,14 @@ const eraseCookie = (name: string) => {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // 최초 로딩 상태는 항상 true
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
 
-  // console.log("AuthProvider rendered. isLoading:", isLoading, "User:", user?.id || 'null');
-
+  // console.log(`AuthProvider Render: isLoading=${isLoading}, user=${user?.id || 'null'}`);
 
   const updateUserProfile = useCallback(async (supabaseUser: SupabaseAuthUser | null) => {
-    // console.log("AuthProvider: updateUserProfile START - Supabase User ID:", supabaseUser?.id || 'null');
+    // console.log("AuthProvider: updateUserProfile - START", supabaseUser?.id || 'null');
     if (supabaseUser) {
       const { data: userData, error: userFetchError } = await supabase
         .from('users')
@@ -95,80 +94,87 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('user');
       }
     } else {
-      // console.log("AuthProvider: updateUserProfile - No Supabase user provided, clearing user state.");
+      // console.log("AuthProvider: updateUserProfile - No Supabase user, clearing user state.");
       setUser(null);
       eraseCookie('currentUser');
       localStorage.removeItem('user');
     }
-    // console.log("AuthProvider: updateUserProfile END");
+    // console.log("AuthProvider: updateUserProfile - END");
   }, []);
 
   useEffect(() => {
-    // console.log("AuthProvider: Main useEffect - START. Pathname:", pathname);
-    setIsLoading(true);
-    // console.log("AuthProvider: Main useEffect - setIsLoading(true) at start.");
+    // console.log("AuthProvider: useEffect for auth listener - START. Pathname:", pathname);
+    // 초기 로딩 상태를 true로 설정하는 것을 리스너 등록 직전으로 옮김.
+    // 이렇게 하면 초기 getSession 호출 전에 리스너가 먼저 반응할 기회를 줌.
+    
     let isMounted = true;
-    let initialSessionResolved = false; // INITIAL_SESSION 이벤트 처리 여부
-
+    
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
         if (!isMounted) return;
-        // console.log(`AuthProvider: onAuthStateChange - Event: ${event}, User: ${session?.user?.id || 'null'}, Current isLoading: ${isLoading}`);
+        console.log(`AuthProvider: onAuthStateChange - Event: ${event}, User: ${session?.user?.id || 'null'}`);
+
+        // 모든 중요한 세션 변경 이벤트 시작 시 로딩 상태로 설정
+        if (['INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT'].includes(event)) {
+          setIsLoading(true);
+          // console.log(`AuthProvider: onAuthStateChange - setIsLoading(true) for ${event}`);
+        }
 
         await updateUserProfile(session?.user || null);
 
-        if (event === 'INITIAL_SESSION') {
-          initialSessionResolved = true;
-          setIsLoading(false);
-          // console.log("AuthProvider: onAuthStateChange - INITIAL_SESSION processed, setIsLoading(false).");
-        } else if (event === 'SIGNED_IN') {
-          setIsLoading(false);
-          // console.log("AuthProvider: onAuthStateChange - SIGNED_IN processed, setIsLoading(false).");
-        } else if (event === 'SIGNED_OUT') {
-          setIsLoading(false);
-          // console.log("AuthProvider: onAuthStateChange - SIGNED_OUT processed, setIsLoading(false).");
+        if (event === 'SIGNED_OUT') {
           if (pathname !== '/login') {
             router.push('/login');
           }
         }
-        // USER_UPDATED, TOKEN_REFRESHED 등은 isLoading 상태를 변경하지 않음
+        
+        // 사용자 프로필 업데이트 후, 중요한 세션 이벤트가 완료되면 로딩 상태 해제
+        if (['INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT'].includes(event)) {
+          setIsLoading(false);
+          // console.log(`AuthProvider: onAuthStateChange - setIsLoading(false) after ${event}`);
+        }
       }
     );
-
-    // onAuthStateChange가 INITIAL_SESSION을 놓치는 경우를 대비하여 getSession도 호출
-    // 하지만 onAuthStateChange가 안정적으로 INITIAL_SESSION을 발생시킨다면 이 부분이 없어도 됨
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!isMounted) return;
-      // console.log("AuthProvider: getSession() - Result:", session?.user?.id || 'null');
-      if (!initialSessionResolved) { // onAuthStateChange의 INITIAL_SESSION이 아직 처리되지 않았다면
-        // console.log("AuthProvider: getSession() - INITIAL_SESSION not yet processed by listener.");
-        await updateUserProfile(session?.user || null);
-        setIsLoading(false);
-        // console.log("AuthProvider: getSession() - Fallback, setIsLoading(false).");
-      }
-    }).catch(error => {
-      if (!isMounted) return;
-      console.error("AuthProvider: getSession() - Error:", error.message);
-      setUser(null);
-      eraseCookie('currentUser');
-      localStorage.removeItem('user');
-      setIsLoading(false);
-      // console.log("AuthProvider: getSession() - Error, setIsLoading(false).");
-    });
     
+    // 초기 세션 정보를 가져와서 상태를 설정합니다.
+    // onAuthStateChange가 INITIAL_SESSION을 발생시키지만, 만약을 위해 getSession도 호출.
+    // 단, getSession의 결과로 isLoading을 직접 false로 바꾸는 것은 onAuthStateChange와 충돌 가능성이 있으므로
+    // updateUserProfile만 호출하고, isLoading은 onAuthStateChange가 INITIAL_SESSION을 통해 관리하도록 함.
+    // 그러나, 만약 onAuthStateChange가 INITIAL_SESSION을 늦게 발생시키거나 발생시키지 않는다면
+    // isLoading이 계속 true로 남아있을 수 있습니다.
+    // 이 문제를 해결하기 위해, getSession 후 user 상태에 따라 isLoading을 직접 제어하는 로직을 추가합니다.
+    async function initializeAuth() {
+      // console.log("AuthProvider: initializeAuth - Calling getSession.");
+      setIsLoading(true); // 명시적으로 로딩 시작
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (!isMounted) return;
+
+      if (error) {
+        console.error("AuthProvider: initializeAuth - Error in getSession:", error.message);
+        await updateUserProfile(null);
+      } else {
+        // console.log("AuthProvider: initializeAuth - getSession successful, session user:", session?.user?.id || 'null');
+        await updateUserProfile(session?.user || null);
+      }
+      // onAuthStateChange가 INITIAL_SESSION을 통해 isLoading을 false로 설정할 때까지 기다리지 않고,
+      // getSession의 결과를 바탕으로 바로 isLoading 상태를 설정합니다.
+      // 이렇게 하면 새로고침 시 "Loading application..."에서 멈추는 현상을 해결하는 데 도움이 될 수 있습니다.
+      setIsLoading(false);
+      // console.log("AuthProvider: initializeAuth - setIsLoading(false). User set to:", session?.user?.id || 'null');
+    }
+
+    initializeAuth();
 
     return () => {
       isMounted = false;
       authListener?.subscription.unsubscribe();
-      // console.log("AuthProvider: Main useEffect - UNMOUNTED.");
+      // console.log("AuthProvider: useEffect for auth listener - UNMOUNTED.");
     };
-  }, [updateUserProfile, router, pathname]);
+  }, [updateUserProfile, router, pathname]); // 의존성 배열에 router, pathname 추가
 
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    // console.log("AuthProvider: login - START. Email:", email);
     setIsLoading(true);
-    // console.log("AuthProvider: login - setIsLoading(true).");
     try {
       const { data: { session: supabaseSession }, error: signInError } = await supabase.auth.signInWithPassword({
         email,
@@ -176,43 +182,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (signInError) {
-        console.error("AuthProvider: login - Error signing in:", signInError.message);
+        console.error("AuthProvider: login - Error:", signInError.message);
         setIsLoading(false);
-        // console.log("AuthProvider: login - Error, setIsLoading(false).");
         return false;
       }
       if (!supabaseSession?.user) {
-        console.error("AuthProvider: login - No session or user after successful signIn.");
+        console.error("AuthProvider: login - No session/user after successful signIn.");
         setIsLoading(false);
-        // console.log("AuthProvider: login - No session/user, setIsLoading(false).");
         return false;
       }
-      // onAuthStateChange가 SIGNED_IN을 처리하고 user 상태 업데이트 및 isLoading=false로 설정
-      // console.log("AuthProvider: login - signInWithPassword successful. User ID:", supabaseSession.user.id);
+      // 성공 시 onAuthStateChange가 SIGNED_IN 이벤트를 처리하여 user 상태를 업데이트하고,
+      // 해당 핸들러 내에서 setIsLoading(false)가 호출됩니다.
       return true;
     } catch (error: any) {
       console.error('AuthProvider: login - Overall error:', error.message);
       setIsLoading(false);
-      // console.log("AuthProvider: login - Catch error, setIsLoading(false).");
       return false;
     }
   };
 
   const logout = async (): Promise<void> => {
-    // console.log("AuthProvider: logout - START.");
     setIsLoading(true);
-    // console.log("AuthProvider: logout - setIsLoading(true).");
     const { error } = await supabase.auth.signOut();
     if (error) {
-      console.error("AuthProvider: logout - Error signing out:", error.message);
+      console.error("AuthProvider: logout - Error:", error.message);
       await updateUserProfile(null); 
       setIsLoading(false);
-      // console.log("AuthProvider: logout - Error, updateUserProfile(null) & setIsLoading(false).");
       if (pathname !== '/login') router.push('/login');
-      throw error; 
+      // throw error; // 에러를 반드시 throw할 필요는 없을 수 있음
     }
-    // 성공 시 onAuthStateChange가 SIGNED_OUT 처리
-    // console.log("AuthProvider: logout - signOut successful. Waiting for onAuthStateChange.");
+    // 성공 시 onAuthStateChange가 SIGNED_OUT 처리 (user null, isLoading false, 페이지 이동)
   };
 
   const hasPermission = useCallback((pageId: string, permissionType: "view" | "edit"): boolean => {
@@ -228,7 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     hasPermission,
-  }), [user, isLoading, hasPermission, login, logout]);
+  }), [user, isLoading, hasPermission, login, logout]); // login, logout 함수 참조가 변경되지 않도록 useCallback 적용 고려
 
   return (
     <AuthContext.Provider value={authContextValue}>
